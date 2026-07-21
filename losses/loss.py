@@ -111,3 +111,44 @@ class DiceCoefficient(tf.keras.metrics.Metric):
         intersection = K.sum(y_true * y_pred, axis=self.axis)
         union = K.sum(y_true, axis=self.axis) + K.sum(y_pred, axis=self.axis)
         return K.mean((2. * intersection + smooth) / (union + smooth), axis=0)
+
+
+class ClassDice(tf.keras.metrics.Metric):
+    """
+    Dice coefficient metric cho một class cụ thể (ví dụ: u lành = 1, u ác = 2).
+    """
+    def __init__(self, class_id: int, name: str, **kwargs):
+        super(ClassDice, self).__init__(name=name, **kwargs)
+        self.class_id = class_id
+        self.intersection = self.add_weight(name='intersection', initializer='zeros')
+        self.union = self.add_weight(name='union', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # y_true: (B, H, W, C)
+        # y_pred: (B, H, W, C) - các phân phối xác suất
+        
+        # Argmax để lấy dự đoán của class có xác suất cao nhất
+        y_pred_idx = tf.argmax(y_pred, axis=-1)
+        y_pred_one_hot = tf.one_hot(y_pred_idx, tf.shape(y_pred)[-1])
+        
+        y_true_one_hot = tf.cast(y_true, tf.float32)
+        y_pred_one_hot = tf.cast(y_pred_one_hot, tf.float32)
+
+        # Lấy riêng channel của class cần tính Dice
+        true_class = y_true_one_hot[..., self.class_id]
+        pred_class = y_pred_one_hot[..., self.class_id]
+
+        # Tính tổng giao và tổng hợp
+        inter = tf.reduce_sum(true_class * pred_class)
+        uni = tf.reduce_sum(true_class) + tf.reduce_sum(pred_class)
+
+        self.intersection.assign_add(inter)
+        self.union.assign_add(uni)
+
+    def result(self):
+        return (2.0 * self.intersection + 1e-7) / (self.union + 1e-7)
+
+    def reset_state(self):
+        self.intersection.assign(0.0)
+        self.union.assign(0.0)
+

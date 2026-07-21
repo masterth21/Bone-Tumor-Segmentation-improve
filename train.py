@@ -19,7 +19,7 @@ from data_generators import data_generator
 from data_preparation.verify_data import verify_data
 from utils.general_utils import create_directory, join_paths, set_gpus, suppress_warnings
 from models.model import prepare_model
-from losses.loss import DiceCoefficient
+from losses.loss import DiceCoefficient, ClassDice
 from losses.unet_loss import unet3p_hybrid_loss, weighted_dice_loss # <-- Import hàm loss mới
 from callbacks.timing_callback import TimingCallback
 
@@ -60,6 +60,8 @@ def train(cfg: DictConfig):
                 optimizer = mixed_precision.LossScaleOptimizer(optimizer, dynamic=True)
             dice_coef = DiceCoefficient(post_processed=True, classes=cfg.OUTPUT.CLASSES)
             dice_coef = tf.keras.metrics.MeanMetricWrapper(name="dice_coef", fn=dice_coef)
+            dice_benign = ClassDice(class_id=1, name="dice_benign")
+            dice_malignant = ClassDice(class_id=2, name="dice_malignant")
             model = prepare_model(cfg, training=True)
     else:
         optimizer = tf.keras.optimizers.Adam(learning_rate=cfg.HYPER_PARAMETERS.LEARNING_RATE)
@@ -67,12 +69,14 @@ def train(cfg: DictConfig):
             optimizer = mixed_precision.LossScaleOptimizer(optimizer, dynamic=True)
         dice_coef = DiceCoefficient(post_processed=True, classes=cfg.OUTPUT.CLASSES)
         dice_coef = tf.keras.metrics.MeanMetricWrapper(name="dice_coef", fn=dice_coef)
+        dice_benign = ClassDice(class_id=1, name="dice_benign")
+        dice_malignant = ClassDice(class_id=2, name="dice_malignant")
         model = prepare_model(cfg, training=True)
 
     model.compile(
         optimizer=optimizer,
         loss=weighted_dice_loss, # <--- ĐÃ ĐỔI SANG DÙNG WEIGHTED LOSS
-        metrics=[dice_coef],
+        metrics=[dice_coef, dice_benign, dice_malignant],
     )
     model.summary()
 
