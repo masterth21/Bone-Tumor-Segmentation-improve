@@ -72,8 +72,7 @@ class DiceCoefficient(tf.keras.metrics.Metric):
         be first converted/mapped into their respective class.
         """
         super(DiceCoefficient, self).__init__(name=name, **kwargs)
-        self.dice_value = self.add_weight(name='dice_value', initializer='zeros',
-                                          aggregation=tf.VariableAggregation.MEAN)  # SUM
+        self.dice_value = self.add_weight(name='dice_value', initializer='zeros')
         self.post_processed = post_processed
         self.classes = classes
         if self.classes == 1:
