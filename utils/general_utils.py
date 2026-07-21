@@ -52,7 +52,10 @@ def get_gpus_count():
     """
     Return length of available gpus.
     """
-    return len(tf.config.experimental.list_logical_devices('GPU'))
+    gpus = len(tf.config.experimental.list_logical_devices('GPU'))
+    if gpus == 0:
+        gpus = len(tf.config.experimental.list_physical_devices('GPU'))
+    return max(1, gpus)
 
 
 def get_data_paths(cfg: DictConfig, mode: str, mask_available: bool):

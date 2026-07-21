@@ -135,7 +135,6 @@ def train(cfg: DictConfig):
         validation_steps=validation_steps,
         epochs=cfg.HYPER_PARAMETERS.EPOCHS,
         callbacks=callbacks,
-        workers=cfg.DATALOADER_WORKERS,
     )
 
     training_time = timing_callback.train_end_time - timing_callback.train_start_time
