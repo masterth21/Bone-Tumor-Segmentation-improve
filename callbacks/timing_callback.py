@@ -1,3 +1,5 @@
+# đo lường và thu thập dữ liệu về thời gian chạy (benchmarking) của mô hình mạng nơ-ron trong quá trình huấn luyện (training)
+# Tính toán Tổng thời gian huấn luyện, Độ trễ (Latency) của từng batch, và Thông lượng (Throughput) (tốc độ xử lý bao nhiêu dữ liệu/giây).
 import sys
 from timeit import default_timer as timer
 import tensorflow as tf

@@ -15,27 +15,32 @@ DATA_PREPARATION:
   SCAN_MAX_VALUE: 250
 
 DATASET:
-  # paths should be relative from project root path
   TRAIN:
-    IMAGES_PATH: "/data/train/images"
-    MASK_PATH: "/data/train/mask"
+    IMAGES_PATH: "D:/TumorBone/data/BTXRD/split/train/images"
+    MASK_PATH: "D:/TumorBone/data/BTXRD/split/train/mask"
   VAL:
-    IMAGES_PATH: "/data/val/images"
-    MASK_PATH: "/data/val/mask"
+    IMAGES_PATH: "D:/TumorBone/data/BTXRD/split/val/images"
+    MASK_PATH: "D:/TumorBone/data/BTXRD/split/val/mask"
 
 
 MODEL:
-  # available variants are unet3plus, unet3plus_deepsup, unet3plus_deepsup_cgm
-  TYPE: "unet3plus"
+  # available: unet3plus, unet3plus_deepsup, unet3plus_deepsup_cgm, hybrid_transunet, nalaformer_transunet
+  TYPE: "nalaformer_transunet"
   WEIGHTS_FILE_NAME: model_${MODEL.TYPE}
   BACKBONE:
     # available variants are unet3plus, vgg16, vgg19
     TYPE: "vgg19"
+  NALAFORMER:
+    D_MODEL: 256       # embedding dimension trong NaLaFormer blocks
+    DEPTH: 4           # số NaLaFormer blocks xếp chồng
+    NUM_HEADS: 8       # số attention heads
+    FF_EXPANSION: 4    # hệ số mở rộng Feed-Forward (d_model × 4)
+    DROPOUT_RATE: 0.1  # dropout rate
 
-DATA_GENERATOR_TYPE: "DALI_GENERATOR"  # options are TF_GENERATOR or DALI_GENERATOR
+DATA_GENERATOR_TYPE: "TF_GENERATOR"  # options are TF_GENERATOR or DALI_GENERATOR (DALI chỉ hỗ trợ Linux)
 SEED: 5  # for result's reproducibility
 VERBOSE: 1  # For logs printing details, available options are 0, 1, 2
-DATALOADER_WORKERS: 3  # number of workers used for data loading
+DATALOADER_WORKERS: 8  # Tăng lên 8 để tận dụng CPU Xeon Gold 36 luồng
 SHOW_CENTER_CHANNEL_IMAGE: True  # only true for UNet3+ for custom dataset it should be False
 
 # Model input shape
@@ -44,9 +49,9 @@ INPUT:
   WIDTH: 320
   CHANNELS: 3
 
-# Model output classes
+# Model output classes (0=background, 1=benign, 2=malignant)
 OUTPUT:
-  CLASSES: 2
+  CLASSES: 3
 
 
 HYPER_PARAMETERS:

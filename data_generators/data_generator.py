@@ -65,14 +65,13 @@ def get_iterations(cfg: DictConfig, mode: str):
     """
     Return steps per epoch
     """
-    images_length = len(
-        os.listdir(
-            join_paths(
-                cfg.WORK_DIR,
-                cfg.DATASET[mode].IMAGES_PATH
-            )
-        )
-    )
+    img_path = cfg.DATASET[mode].IMAGES_PATH
+    if os.path.isabs(img_path):
+        images_dir = img_path
+    else:
+        images_dir = join_paths(cfg.WORK_DIR, img_path)
+
+    images_length = len(os.listdir(images_dir))
 
     if cfg.DATA_GENERATOR_TYPE == "TF_GENERATOR":
         training_steps = images_length // cfg.HYPER_PARAMETERS.BATCH_SIZE

@@ -58,45 +58,36 @@ def get_gpus_count():
 def get_data_paths(cfg: DictConfig, mode: str, mask_available: bool):
     """
     Return list of absolute images/mask paths.
-    There are two options you can either pass directory path or list.
-    In case of directory, it should contain relative path of images/mask
-    folder from project root path.
-    In case of list of images, every element should contain absolute path
-    for each image and mask.
-    For prediction, you can set mask path to None if mask are not
-    available for visualization.
+    Supports both absolute paths (e.g. D:/data/...) and
+    relative paths (joined with WORK_DIR).
     """
+
+    def resolve_path(cfg_path):
+        """Nếu path tuyệt đối thì dùng trực tiếp, nếu tương đối thì ghép WORK_DIR."""
+        if os.path.isabs(cfg_path):
+            return cfg_path
+        return join_paths(cfg.WORK_DIR, cfg_path)
 
     # read images from directory
     if isinstance(cfg.DATASET[mode].IMAGES_PATH, str):
-        # has only images name not full path
-        images_paths = os.listdir(
-            join_paths(
-                cfg.WORK_DIR,
-                cfg.DATASET[mode].IMAGES_PATH
-            )
-        )
+        images_dir = resolve_path(cfg.DATASET[mode].IMAGES_PATH)
+        images_paths = os.listdir(images_dir)
 
         if mask_available:
+            mask_dir = resolve_path(cfg.DATASET[mode].MASK_PATH)
             mask_paths = [
                 image_to_mask_name(image_name) for image_name in images_paths
             ]
             # create full mask paths from folder
             mask_paths = [
-                join_paths(
-                    cfg.WORK_DIR,
-                    cfg.DATASET[mode].MASK_PATH,
-                    mask_name
-                ) for mask_name in mask_paths
+                os.path.join(mask_dir, mask_name)
+                for mask_name in mask_paths
             ]
 
         # create full images paths from folder
         images_paths = [
-            join_paths(
-                cfg.WORK_DIR,
-                cfg.DATASET[mode].IMAGES_PATH,
-                image_name
-            ) for image_name in images_paths
+            os.path.join(images_dir, image_name)
+            for image_name in images_paths
         ]
     else:
         # read images and mask from absolute paths given in list

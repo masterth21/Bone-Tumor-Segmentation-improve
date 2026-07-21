@@ -45,8 +45,13 @@ def prepare_image(path: str, resize: DictConfig, normalize_type: str):
 def prepare_mask(path: str, resize: dict, normalize_mask: dict):
     """
         Prepare mask for model.
-        read mask --> resize --> normalize --> return as int32
-        """
+        read mask --> resize --> convert pixel values to class indices --> return as int32
+        
+        Pixel value mapping:
+          0   (đen)   → class 0 (background)
+          128 (xám)   → class 1 (u lành tính)
+          255 (trắng) → class 2 (u ác tính)
+    """
     mask = read_image(path, cv2.IMREAD_GRAYSCALE)
 
     if resize.VALUE:
@@ -55,20 +60,24 @@ def prepare_mask(path: str, resize: dict, normalize_mask: dict):
     if normalize_mask.VALUE:
         mask = mask / normalize_mask.NORMALIZE_VALUE
 
-    mask = mask.astype(np.int32)
+    # Convert pixel values → class indices
+    class_mask = np.zeros_like(mask, dtype=np.int32)
+    class_mask[mask == 128] = 1   # u lành tính
+    class_mask[mask == 255] = 2   # u ác tính
+    # mask == 0 → class 0 (background) — đã là 0 sẵn
 
-    return mask
+    return class_mask
 
 
 def image_to_mask_name(image_name: str):
     """
-    Convert image file name to it's corresponding mask file name e.g.
-    image name     -->     mask name
-    image_28_0.png         mask_28_0.png
-    replace image with mask
+    Convert image file name to it's corresponding mask file name.
+    Dataset BTXRD: ảnh và mask cùng tên (IMG000001.png → IMG000001.png)
+    Dataset gốc:   image_28_0.png → mask_28_0.png
     """
-
-    return image_name.replace('image', 'mask')
+    if 'image' in image_name.lower():
+        return image_name.replace('image', 'mask').replace('IMAGE', 'MASK')
+    return image_name  # cùng tên
 
 
 def postprocess_mask(mask, classes, output_type=np.int32):
