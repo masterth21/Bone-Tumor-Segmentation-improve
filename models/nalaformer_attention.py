@@ -85,15 +85,35 @@ class QueryFeatureMap(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.eps = eps
 
+    def build(self, input_shape):
+        # f(x) parameters: scale (lambda) và tau
+        self.scale = self.add_weight(
+            name="q_scale",
+            shape=(1,),
+            initializer=tf.keras.initializers.Ones(),
+            trainable=True,
+        )
+        self.tau = self.add_weight(
+            name="q_tau",
+            shape=(1,),
+            initializer=tf.keras.initializers.Constant(0.5),
+            trainable=True,
+        )
+        super().build(input_shape)
+
     def call(self, q):
         # q: (B, N, d)
         norm = tf.norm(q, axis=-1, keepdims=True)               # (B, N, 1)
         direction = q / (norm + self.eps)                        # (B, N, d)
 
-        # d(q)^{||q||}  — norm-aware scaling
-        # Clamp norm để ổn định gradient
-        norm_clamped = tf.clip_by_value(norm, 0.0, 20.0)
-        d_power = tf.math.pow(norm_clamped + self.eps, norm_clamped)  # (B, N, 1)
+        # f(||q||) = scale * (tau + tanh(||q||))
+        # tanh(||q||) thuộc [-1, 1] nên số mũ f(||q||) cực kỳ ổn định, không bị bùng nổ
+        f_norm = self.scale * (self.tau + tf.math.tanh(norm))   # (B, N, 1)
+
+        # d(q)^{f(||q||)}
+        # Clamp norm để đảm bảo tính ổn định số học
+        norm_clamped = tf.clip_by_value(norm, self.eps, 20.0)
+        d_power = tf.math.pow(norm_clamped, f_norm)             # (B, N, 1)
         abs_d_power = tf.abs(d_power)                            # (B, N, 1)
 
         # Cosine direction encoding
@@ -139,7 +159,7 @@ class KeyFeatureMap(tf.keras.layers.Layer):
         direction = k / (norm + self.eps)                        # (B, N, d)
 
         # |k^λ|  → sử dụng norm^λ
-        norm_clamped = tf.clip_by_value(norm, self.eps, 1e6)
+        norm_clamped = tf.clip_by_value(norm, self.eps, 20.0)
         k_pow = tf.math.pow(norm_clamped, self.lam)              # (B, N, 1)
         abs_k_pow = tf.abs(k_pow)                                # (B, N, 1)
 
