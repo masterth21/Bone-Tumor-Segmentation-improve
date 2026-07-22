@@ -106,23 +106,22 @@ class QueryFeatureMap(tf.keras.layers.Layer):
         norm = tf.norm(q, axis=-1, keepdims=True)               # (B, N, 1)
         direction = q / (norm + self.eps)                        # (B, N, d)
 
-        # f(||q||) = scale * (tau + tanh(||q||))
-        # Khống chế số mũ f_norm trong khoảng an toàn [0.1, 3.0] để không bao giờ bị nổ gradient
-        raw_f_norm = self.scale * (self.tau + tf.math.tanh(norm))
-        f_norm = tf.clip_by_value(raw_f_norm, 0.1, 3.0)         # (B, N, 1)
+        # Công thức chuẩn bài báo NaLaFormer Eq.(4): f(||q||) = scale * (tau + tanh(||q||))
+        # Dùng softplus(scale) để ép scale luôn dương, khống chế f_norm trong [0.1, 3.0]
+        scale_pos = tf.nn.softplus(self.scale)
+        f_norm = scale_pos * (self.tau + tf.math.tanh(norm))
+        f_norm = tf.clip_by_value(f_norm, 0.1, 3.0)              # (B, N, 1)
 
-        # d(q)^{f(||q||)}
-        # Clamp norm trong khoảng [0.01, 10.0] để pow() hoàn toàn ổn định
-        norm_clamped = tf.clip_by_value(norm, 0.01, 10.0)
-        d_power = tf.math.pow(norm_clamped, f_norm)             # (B, N, 1)
-        abs_d_power = tf.abs(d_power)                            # (B, N, 1)
+        # d(q)^{f(||q||)} — Chuẩn bài báo: base d(q) > 0 nhờ softplus(norm) + 1e-4
+        d_base = tf.nn.softplus(norm) + 1e-4
+        d_power = tf.math.pow(d_base, f_norm)                   # (B, N, 1)
 
-        # Cosine direction encoding
+        # Cosine direction encoding: [cos(dir); sin(dir)]
         cos_dir = tf.math.cos(direction)                         # (B, N, d)
         sin_dir = tf.math.sin(direction)                         # (B, N, d)
         cos_sin = tf.concat([cos_dir, sin_dir], axis=-1)         # (B, N, 2d)
 
-        return abs_d_power * cos_sin                             # (B, N, 2d)
+        return d_power * cos_sin                                 # (B, N, 2d)
 
     def get_config(self):
         config = super().get_config()
@@ -135,9 +134,7 @@ class QueryFeatureMap(tf.keras.layers.Layer):
 # ============================================================================
 class KeyFeatureMap(tf.keras.layers.Layer):
     """
-    φ_k(k) = |k^λ| ⊙ [cos(dir(k)); sin(dir(k))]
-
-    λ là tham số học được, kiểm soát phân phối norm của key.
+    φ_k(k) = |k^λ| ⊙ [cos(dir(k)); sin(dir(k))]  (Chuẩn bài báo NaLaFormer Eq. 5)
     """
 
     def __init__(self, eps: float = 1e-6, **kwargs):
@@ -145,7 +142,7 @@ class KeyFeatureMap(tf.keras.layers.Layer):
         self.eps = eps
 
     def build(self, input_shape):
-        # λ — learnable scalar, khởi tạo = 1.0
+        # λ — learnable scalar chuẩn bài báo
         self.lam = self.add_weight(
             name="lambda_key",
             shape=(1,),
@@ -159,18 +156,19 @@ class KeyFeatureMap(tf.keras.layers.Layer):
         norm = tf.norm(k, axis=-1, keepdims=True)               # (B, N, 1)
         direction = k / (norm + self.eps)                        # (B, N, d)
 
-        # |k^λ|  → khống chế lambda trong khoảng [0.1, 3.0] và norm trong [0.01, 10.0]
-        lam_bounded = tf.clip_by_value(self.lam, 0.1, 3.0)
-        norm_clamped = tf.clip_by_value(norm, 0.01, 10.0)
-        k_pow = tf.math.pow(norm_clamped, lam_bounded)           # (B, N, 1)
-        abs_k_pow = tf.abs(k_pow)                                # (B, N, 1)
+        # Công thức chuẩn bài báo NaLaFormer Eq.(5): k^λ với lambda > 0 nhờ softplus
+        lam_pos = tf.nn.softplus(self.lam)
+        lam_pos = tf.clip_by_value(lam_pos, 0.1, 3.0)
+        
+        k_base = tf.nn.softplus(norm) + 1e-4
+        k_pow = tf.math.pow(k_base, lam_pos)                     # (B, N, 1)
 
-        # Cosine direction
+        # Cosine direction encoding
         cos_dir = tf.math.cos(direction)
         sin_dir = tf.math.sin(direction)
         cos_sin = tf.concat([cos_dir, sin_dir], axis=-1)         # (B, N, 2d)
 
-        return abs_k_pow * cos_sin                               # (B, N, 2d)
+        return k_pow * cos_sin                                   # (B, N, 2d)
 
     def get_config(self):
         config = super().get_config()
