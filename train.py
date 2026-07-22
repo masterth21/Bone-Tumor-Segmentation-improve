@@ -1,6 +1,7 @@
 """
 Training script
 """
+import os
 import numpy as np
 from datetime import datetime, timedelta
 import hydra
@@ -91,6 +92,16 @@ def train(cfg: DictConfig):
 
     csv_log_path = join_paths(cfg.WORK_DIR, cfg.CALLBACKS.CSV_LOGGER.PATH, f"training_logs_{cfg.MODEL.TYPE}.csv")
     print("Logs path\n" + csv_log_path)
+
+    # Ghi phân cách và thời gian bắt đầu chạy vào file CSV log trước mỗi lượt train
+    start_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    file_exists = os.path.exists(csv_log_path)
+    with open(csv_log_path, "a", encoding="utf-8") as f:
+        if file_exists:
+            f.write("\n\n")
+        f.write(f"# ==================================================\n")
+        f.write(f"# Training Run Started At: {start_time_str}\n")
+        f.write(f"# ==================================================\n")
 
     evaluation_metric = "val_dice_coef"
     if len(model.outputs) > 1:

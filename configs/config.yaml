@@ -75,7 +75,7 @@ CALLBACKS:
 
   CSV_LOGGER:
     PATH: "/checkpoint"
-    APPEND_LOGS: False
+    APPEND_LOGS: True
 
 
 PREPROCESS_DATA:
