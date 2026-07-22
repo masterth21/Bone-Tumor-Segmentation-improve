@@ -5,55 +5,53 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 
 
-def iou(y_true, y_pred, smooth=1.e-9):
+def iou(y_true, y_pred, smooth=1.e-7):
     """
     Calculate intersection over union (IoU) between images.
-    Input shape should be Batch x Height x Width x #Classes (BxHxWxN).
-    Using Mean as reduction type for batch values.
+    Input shape: Batch x Height x Width x #Classes.
     """
-    intersection = K.sum(K.abs(y_true * y_pred), axis=[1, 2, 3])
-    union = K.sum(y_true, [1, 2, 3]) + K.sum(y_pred, [1, 2, 3])
-    union = union - intersection
-    iou = K.mean((intersection + smooth) / (union + smooth), axis=0)
-    return iou
+    y_true_f = tf.cast(y_true, tf.float32)
+    y_pred_f = tf.cast(y_pred, tf.float32)
+    
+    intersection = K.sum(K.abs(y_true_f * y_pred_f), axis=[1, 2, 3])
+    union = K.sum(y_true_f, [1, 2, 3]) + K.sum(y_pred_f, [1, 2, 3]) - intersection
+    return K.mean((intersection + smooth) / (union + smooth), axis=0)
 
 
 def iou_loss(y_true, y_pred):
     """
     Jaccard / IoU loss
     """
-    return 1 - iou(y_true, y_pred)
+    return 1.0 - iou(y_true, y_pred)
 
 
 def focal_loss(y_true, y_pred):
     """
-    Focal loss
+    Focal loss bảo vệ chống NaN
     """
-    gamma = 2.
-    alpha = 4.
-    epsilon = 1.e-9
+    gamma = 2.0
+    alpha = 4.0
+    epsilon = 1.e-7
 
-    y_true_c = tf.convert_to_tensor(y_true, tf.float32)
-    y_pred_c = tf.convert_to_tensor(y_pred, tf.float32)
+    y_true_c = tf.cast(y_true, tf.float32)
+    y_pred_c = tf.clip_by_value(tf.cast(y_pred, tf.float32), epsilon, 1.0 - epsilon)
 
-    model_out = tf.add(y_pred_c, epsilon)
-    ce = tf.multiply(y_true_c, -tf.math.log(model_out))
-    weight = tf.multiply(y_true_c, tf.pow(
-        tf.subtract(1., model_out), gamma)
-                         )
-    fl = tf.multiply(alpha, tf.multiply(weight, ce))
+    ce = y_true_c * -tf.math.log(y_pred_c)
+    weight = y_true_c * tf.math.pow(1.0 - y_pred_c, gamma)
+    fl = alpha * weight * ce
     reduced_fl = tf.reduce_max(fl, axis=-1)
     return tf.reduce_mean(reduced_fl)
 
 
-def ssim_loss(y_true, y_pred, smooth=1.e-9):
+def ssim_loss(y_true, y_pred, smooth=1.e-7):
     """
-    Structural Similarity Index loss.
-    Input shape should be Batch x Height x Width x #Classes (BxHxWxN).
-    Using Mean as reduction type for batch values.
+    Structural Similarity Index loss bảo vệ chống NaN
     """
-    ssim_value = tf.image.ssim(y_true, y_pred, max_val=1)
-    return K.mean(1 - ssim_value + smooth, axis=0)
+    y_true_f = tf.cast(y_true, tf.float32)
+    y_pred_f = tf.clip_by_value(tf.cast(y_pred, tf.float32), 0.0, 1.0)
+    
+    ssim_value = tf.image.ssim(y_true_f, y_pred_f, max_val=1.0)
+    return K.mean(1.0 - ssim_value + smooth, axis=0)
 
 
 class DiceCoefficient(tf.keras.metrics.Metric):
