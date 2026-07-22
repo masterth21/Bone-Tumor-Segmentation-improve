@@ -19,15 +19,23 @@ def check_image_and_mask(cfg, mode):
     img_cfg = cfg.DATASET[mode].IMAGES_PATH
     mask_cfg = cfg.DATASET[mode].MASK_PATH
 
-    if os.path.isabs(img_cfg):
-        images_path = img_cfg
-    else:
-        images_path = join_paths(cfg.WORK_DIR, img_cfg)
+    def resolve_path(cfg_path):
+        if os.path.exists(cfg_path):
+            return cfg_path
+        current_drive = os.path.splitdrive(os.path.abspath(cfg.WORK_DIR))[0]
+        if current_drive:
+            path_drive = os.path.splitdrive(cfg_path)[0]
+            if path_drive:
+                alt_path = cfg_path.replace(path_drive, current_drive)
+                if os.path.exists(alt_path):
+                    return alt_path
+        rel_path = join_paths(cfg.WORK_DIR, cfg_path)
+        if os.path.exists(rel_path):
+            return rel_path
+        return cfg_path
 
-    if os.path.isabs(mask_cfg):
-        mask_path = mask_cfg
-    else:
-        mask_path = join_paths(cfg.WORK_DIR, mask_cfg)
+    images_path = resolve_path(img_cfg)
+    mask_path = resolve_path(mask_cfg)
 
     all_images = os.listdir(images_path)
 

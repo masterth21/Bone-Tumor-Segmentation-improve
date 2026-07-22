@@ -66,9 +66,16 @@ def get_data_paths(cfg: DictConfig, mode: str, mask_available: bool):
     """
 
     def resolve_path(cfg_path):
-        """Nếu path tuyệt đối thì dùng trực tiếp, nếu tương đối thì ghép WORK_DIR."""
-        if os.path.isabs(cfg_path):
+        """Nếu path tồn tại thì dùng trực tiếp, nếu khác ổ đĩa (D:\ vs U:\) thì tự đổi ổ đĩa."""
+        if os.path.exists(cfg_path):
             return cfg_path
+        current_drive = os.path.splitdrive(os.path.abspath(cfg.WORK_DIR))[0]
+        if current_drive:
+            path_drive = os.path.splitdrive(cfg_path)[0]
+            if path_drive:
+                alt_path = cfg_path.replace(path_drive, current_drive)
+                if os.path.exists(alt_path):
+                    return alt_path
         return join_paths(cfg.WORK_DIR, cfg_path)
 
     # read images from directory
