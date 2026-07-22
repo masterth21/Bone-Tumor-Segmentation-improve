@@ -107,12 +107,13 @@ class QueryFeatureMap(tf.keras.layers.Layer):
         direction = q / (norm + self.eps)                        # (B, N, d)
 
         # f(||q||) = scale * (tau + tanh(||q||))
-        # tanh(||q||) thuộc [-1, 1] nên số mũ f(||q||) cực kỳ ổn định, không bị bùng nổ
-        f_norm = self.scale * (self.tau + tf.math.tanh(norm))   # (B, N, 1)
+        # Khống chế số mũ f_norm trong khoảng an toàn [0.1, 3.0] để không bao giờ bị nổ gradient
+        raw_f_norm = self.scale * (self.tau + tf.math.tanh(norm))
+        f_norm = tf.clip_by_value(raw_f_norm, 0.1, 3.0)         # (B, N, 1)
 
         # d(q)^{f(||q||)}
-        # Clamp norm để đảm bảo tính ổn định số học
-        norm_clamped = tf.clip_by_value(norm, self.eps, 20.0)
+        # Clamp norm trong khoảng [0.01, 10.0] để pow() hoàn toàn ổn định
+        norm_clamped = tf.clip_by_value(norm, 0.01, 10.0)
         d_power = tf.math.pow(norm_clamped, f_norm)             # (B, N, 1)
         abs_d_power = tf.abs(d_power)                            # (B, N, 1)
 
@@ -158,9 +159,10 @@ class KeyFeatureMap(tf.keras.layers.Layer):
         norm = tf.norm(k, axis=-1, keepdims=True)               # (B, N, 1)
         direction = k / (norm + self.eps)                        # (B, N, d)
 
-        # |k^λ|  → sử dụng norm^λ
-        norm_clamped = tf.clip_by_value(norm, self.eps, 20.0)
-        k_pow = tf.math.pow(norm_clamped, self.lam)              # (B, N, 1)
+        # |k^λ|  → khống chế lambda trong khoảng [0.1, 3.0] và norm trong [0.01, 10.0]
+        lam_bounded = tf.clip_by_value(self.lam, 0.1, 3.0)
+        norm_clamped = tf.clip_by_value(norm, 0.01, 10.0)
+        k_pow = tf.math.pow(norm_clamped, lam_bounded)           # (B, N, 1)
         abs_k_pow = tf.abs(k_pow)                                # (B, N, 1)
 
         # Cosine direction

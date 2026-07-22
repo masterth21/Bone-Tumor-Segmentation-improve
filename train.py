@@ -56,7 +56,7 @@ def train(cfg: DictConfig):
         strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.HierarchicalCopyAllReduce())
         print('Number of visible gpu devices: {}'.format(strategy.num_replicas_in_sync))
         with strategy.scope():
-            optimizer = tf.keras.optimizers.Adam(learning_rate=cfg.HYPER_PARAMETERS.LEARNING_RATE)
+            optimizer = tf.keras.optimizers.Adam(learning_rate=cfg.HYPER_PARAMETERS.LEARNING_RATE, clipnorm=1.0)
             if cfg.OPTIMIZATION.AMP:
                 optimizer = mixed_precision.LossScaleOptimizer(optimizer, dynamic=True)
             dice_coef = DiceCoefficient(post_processed=True, classes=cfg.OUTPUT.CLASSES)
@@ -65,7 +65,7 @@ def train(cfg: DictConfig):
             dice_malignant = ClassDice(class_id=2, name="dice_malignant")
             model = prepare_model(cfg, training=True)
     else:
-        optimizer = tf.keras.optimizers.Adam(learning_rate=cfg.HYPER_PARAMETERS.LEARNING_RATE)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=cfg.HYPER_PARAMETERS.LEARNING_RATE, clipnorm=1.0)
         if cfg.OPTIMIZATION.AMP:
             optimizer = mixed_precision.LossScaleOptimizer(optimizer, dynamic=True)
         dice_coef = DiceCoefficient(post_processed=True, classes=cfg.OUTPUT.CLASSES)
