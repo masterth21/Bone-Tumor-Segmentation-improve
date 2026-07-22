@@ -52,11 +52,15 @@ def process_test_dataset(cfg: DictConfig):
     # Dò tìm thư mục chứa ảnh tập TEST/VAL
     images_dir_raw = cfg.DATASET[mode].IMAGES_PATH
     images_dir = resolve_path(cfg, images_dir_raw)
-    parent_dir = os.path.dirname(images_dir)
+    
+    # Lấy gốc thư mục Dataset_Bone_Tumor bên ngoài
+    root_dataset_dir = os.path.dirname(os.path.dirname(images_dir))
+    if not os.path.exists(root_dataset_dir):
+        root_dataset_dir = os.path.dirname(images_dir)
 
-    # 2. Tạo 2 thư mục xuất kết quả ngay bên cạnh thư mục ảnh
-    mask_test_dir = os.path.join(parent_dir, "mask_test")
-    show_predict_dir = os.path.join(parent_dir, "show_predict")
+    # 2. Tạo 2 thư mục xuất kết quả nằm trực tiếp ở gốc thư mục Dataset_Bone_Tumor bên ngoài
+    mask_test_dir = os.path.join(root_dataset_dir, "mask_test")
+    show_predict_dir = os.path.join(root_dataset_dir, "show_predict")
 
     os.makedirs(mask_test_dir, exist_ok=True)
     os.makedirs(show_predict_dir, exist_ok=True)
