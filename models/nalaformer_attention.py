@@ -245,6 +245,10 @@ class QNormAwareLinearAttention(tf.keras.layers.Layer):
         self.W_k = tf.keras.layers.Dense(d, use_bias=False, name="proj_k")
         self.W_v = tf.keras.layers.Dense(d, use_bias=False, name="proj_v")
 
+        # LayerNorm khống chế biên độ Q, K an toàn tuyệt đối chống nổ ma trận 781 tỷ
+        self.norm_q = tf.keras.layers.LayerNormalization(epsilon=1e-5, name="norm_q")
+        self.norm_k = tf.keras.layers.LayerNormalization(epsilon=1e-5, name="norm_k")
+
         # Feature maps
         self.phi_q = QueryFeatureMap(eps=self.eps, name="phi_q")
         self.phi_k = KeyFeatureMap(eps=self.eps, name="phi_k")
@@ -268,10 +272,10 @@ class QNormAwareLinearAttention(tf.keras.layers.Layer):
         Returns:
             (B, N, d_model)
         """
-        # ---- Project ----
-        Q = self.W_q(x)    # (B, N, d)
-        K = self.W_k(x)    # (B, N, d)
-        V = self.W_v(x)    # (B, N, d)
+        # ---- Project + LayerNorm ----
+        Q = self.norm_q(self.W_q(x))    # (B, N, d)
+        K = self.norm_k(self.W_k(x))    # (B, N, d)
+        V = self.W_v(x)                 # (B, N, d)
 
         # ---- Feature maps ----
         Q_prime = self.phi_q(Q)   # (B, N, 2d)
