@@ -70,7 +70,7 @@ CALLBACKS:
     PATH: "/checkpoint/tb_logs"
 
   EARLY_STOPPING:
-    PATIENCE: 100
+    PATIENCE: 15 # Tối ưu cho tập ~2k ảnh: ngắt train nếu 15 epoch liên tiếp val_dice không tăng
 
   MODEL_CHECKPOINT:
     PATH: "/checkpoint"
