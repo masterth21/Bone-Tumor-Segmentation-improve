@@ -286,12 +286,13 @@ class QNormAwareLinearAttention(tf.keras.layers.Layer):
         # Q_prime: (B, N, 2d),  S: (B, 2d, d)  →  (B, N, d)
         attn_out = tf.einsum("bni,bij->bnj", Q_prime, S)  # (B, N, d)
 
-        # ---- Normalisation (chia cho tổng K') ----
-        # z = Q' × (K'^T 1)  →  (B, N, 1)
-        K_sum = tf.reduce_sum(K_prime, axis=1, keepdims=False)  # (B, 2d)
-        z = tf.einsum("bni,bi->bn", Q_prime, K_sum)            # (B, N)
-        z = tf.maximum(z, self.eps)
-        attn_out = attn_out / z[..., tf.newaxis]                # (B, N, d)
+        # ---- Normalisation (chia cho tổng K' không âm) ----
+        # Dùng tf.abs(K_prime) và tf.abs(Q_prime) để tránh việc cos/sin làm triệt tiêu z về 0 hoặc số âm
+        K_sum = tf.reduce_sum(tf.abs(K_prime), axis=1, keepdims=False)  # (B, 2d)
+        z = tf.einsum("bni,bi->bn", tf.abs(Q_prime), K_sum)            # (B, N)
+        z = tf.maximum(z, 1e-4)                                        # Sàn an toàn 1e-4
+        attn_out = attn_out / z[..., tf.newaxis]                        # (B, N, d)
+        attn_out = tf.clip_by_value(attn_out, -100.0, 100.0)            # Khống chế biên độ gradient
 
         # ---- Gating (ACT[G]) ----
         G = self.gate_act(self.gate_proj(x))  # (B, N, d)

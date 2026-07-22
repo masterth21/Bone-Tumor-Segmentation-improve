@@ -112,8 +112,8 @@ USE_MULTI_GPUS:
 
 
 OPTIMIZATION:
-  AMP: True  # Automatic Mixed Precision(AMP)
-  XLA: True  # Accelerated Linear Algebra(XLA)
+  AMP: False # Đã tắt mixed_float16 để dùng float32 chuẩn, tránh nổ gradient NaN trong NaLaFormer
+  XLA: False # Đã tắt XLA để tương thích hoàn hảo mọi hệ thống GPU
 
 
 # to stop hydra from storing logs files
