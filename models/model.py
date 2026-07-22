@@ -2,8 +2,8 @@
 Returns Unet3+, U-Net++, or Hybrid CNN-Transformer models
 """
 import tensorflow as tf
-from omegaconf import DictConfig
 
+from omegaconf import DictConfig
 # Import các module gốc
 from .backbones import vgg16_backbone, vgg19_backbone, unet3plus_backbone
 from .unet3plus import unet3plus
@@ -157,13 +157,100 @@ def build_nalaformer_transunet(cfg):
     return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="NaLaFormer_TransUNet")
 
 
+def build_nalaformer_full_transunet(cfg):
+    """HYBRID FULL NALAFORMER TRANSUNET:
+    ResNet50V2 + NaLaFormer Bottleneck + NaLaFormer Skip-Attention Gates + Skip Connections
+    
+    1. Bottleneck: NaLaFormer bắt ngữ nghĩa toàn cục (Global Context: U Lành vs U Ác)
+    2. Skip Connections (s1, s2, s3, s4): NaLaFormer Attention Gate lọc nhiễu nền,
+       làm nổi bật ranh giới khối u ở mọi độ phân giải (Spatial Refinement).
+    """
+    img_size = cfg.INPUT.HEIGHT
+    channels = cfg.INPUT.CHANNELS
+    num_classes = cfg.OUTPUT.CLASSES
+
+    nala_cfg = getattr(cfg.MODEL, 'NALAFORMER', None)
+    d_model = nala_cfg.D_MODEL if nala_cfg and hasattr(nala_cfg, 'D_MODEL') else 256
+    depth = nala_cfg.DEPTH if nala_cfg and hasattr(nala_cfg, 'DEPTH') else 4
+    num_heads = nala_cfg.NUM_HEADS if nala_cfg and hasattr(nala_cfg, 'NUM_HEADS') else 8
+    ff_expansion = nala_cfg.FF_EXPANSION if nala_cfg and hasattr(nala_cfg, 'FF_EXPANSION') else 4
+    dropout_rate = nala_cfg.DROPOUT_RATE if nala_cfg and hasattr(nala_cfg, 'DROPOUT_RATE') else 0.1
+
+    # --- PHẦN 1: ENCODER (ResNet50V2) ---
+    base_model = tf.keras.applications.ResNet50V2(
+        include_top=False, weights='imagenet', input_shape=(img_size, img_size, channels)
+    )
+    
+    s1 = base_model.get_layer("conv1_conv").output       # 192x192
+    s2 = base_model.get_layer("conv2_block2_out").output # 96x96
+    s3 = base_model.get_layer("conv3_block3_out").output # 48x48
+    s4 = base_model.get_layer("conv4_block5_out").output # 24x24
+    cnn_out = base_model.output                          # 12x12
+
+    # --- PHẦN 2: NALAFORMER BOTTLENECK ---
+    nala_bottleneck = NaLaFormerBottleneck(
+        d_model=d_model,
+        depth=depth,
+        num_heads=num_heads,
+        ff_expansion=ff_expansion,
+        dropout_rate=dropout_rate,
+        name="nalaformer_bottleneck",
+    )
+    x = nala_bottleneck(cnn_out)
+
+    # --- PHẦN 3: NALAFORMER SKIP ATTENTION GATES (Lọc viền u trên các Skip Connections) ---
+    s4_gate = NaLaFormerBottleneck(d_model=256, depth=1, num_heads=4, name="nala_skip_s4")(s4)
+    s3_gate = NaLaFormerBottleneck(d_model=128, depth=1, num_heads=4, name="nala_skip_s3")(s3)
+    s2_gate = NaLaFormerBottleneck(d_model=64, depth=1, num_heads=4, name="nala_skip_s2")(s2)
+    s1_gate = NaLaFormerBottleneck(d_model=32, depth=1, num_heads=4, name="nala_skip_s1")(s1)
+
+    # --- PHẦN 4: DECODER ---
+    # Tầng 1: 12x12 -> 24x24
+    x = tf.keras.layers.Conv2DTranspose(512, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s4_gate])
+    x = tf.keras.layers.Conv2D(512, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Tầng 2: 24x24 -> 48x48
+    x = tf.keras.layers.Conv2DTranspose(256, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s3_gate])
+    x = tf.keras.layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Tầng 3: 48x48 -> 96x96
+    x = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s2_gate])
+    x = tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Tầng 4: 96x96 -> 192x192
+    x = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s1_gate])
+    x = tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Tầng 5: 192x192 -> 384x384
+    x = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Đầu ra
+    outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='softmax', name='output_layer')(x)
+
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="NaLaFormer_Full_TransUNet")
+
+
 def prepare_model(cfg: DictConfig, training=False):
     """TRẠM ĐIỀU PHỐI"""
     input_shape = [cfg.INPUT.HEIGHT, cfg.INPUT.WIDTH, cfg.INPUT.CHANNELS]
 
     if cfg.MODEL.TYPE == "nalaformer_transunet":
-        print(">>> Đang sử dụng kiến trúc: NaLaFormer TransUNet (ResNet50V2 + Q Norm-Aware Linear Attention)")
+        print(">>> Đang sử dụng kiến trúc: NaLaFormer TransUNet (NaLaFormer ở Bottleneck)")
         return build_nalaformer_transunet(cfg)
+
+    elif cfg.MODEL.TYPE == "nalaformer_full_transunet":
+        print(">>> Đang sử dụng kiến trúc: FULL NaLaFormer TransUNet (NaLaFormer ở Bottleneck + Cầu nối Skip Connections)")
+        return build_nalaformer_full_transunet(cfg)
 
     elif cfg.MODEL.TYPE == "hybrid_transunet":
         print(">>> Đang sử dụng kiến trúc: TRUE TransUNet (ResNet50V2 + Transformer + Skip Connections)")

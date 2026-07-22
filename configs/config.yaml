@@ -24,7 +24,11 @@ DATASET:
 
 
 MODEL:
-  # available: unet3plus, unet3plus_deepsup, unet3plus_deepsup_cgm, hybrid_transunet, nalaformer_transunet
+  # Các kiến trúc khả dụng:
+  #   - nalaformer_transunet (NaLaFormer ở Bottleneck - mặc định)
+  #   - nalaformer_full_transunet (NaLaFormer ở Bottleneck + Cầu nối Skip Connections - Kép)
+  #   - hybrid_transunet (Softmax Transformer tiêu chuẩn ở Bottleneck)
+  #   - unet3plus / unet3plus_deepsup
   TYPE: "nalaformer_transunet"
   WEIGHTS_FILE_NAME: model_${MODEL.TYPE}
   BACKBONE:
