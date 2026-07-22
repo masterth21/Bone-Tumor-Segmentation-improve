@@ -66,9 +66,12 @@ def get_data_paths(cfg: DictConfig, mode: str, mask_available: bool):
     """
 
     def resolve_path(cfg_path):
-        """Nếu path tồn tại thì dùng trực tiếp, nếu khác ổ đĩa (D:\ vs U:\) thì tự đổi ổ đĩa."""
+        """Nếu path tồn tại thì dùng trực tiếp, tự động sửa lỗi chính tả và đổi ổ đĩa."""
         if os.path.exists(cfg_path):
             return cfg_path
+        fixed_typo = cfg_path.replace("Datatset_", "Dataset_")
+        if os.path.exists(fixed_typo):
+            return fixed_typo
         current_drive = os.path.splitdrive(os.path.abspath(cfg.WORK_DIR))[0]
         if current_drive:
             path_drive = os.path.splitdrive(cfg_path)[0]
@@ -76,7 +79,10 @@ def get_data_paths(cfg: DictConfig, mode: str, mask_available: bool):
                 alt_path = cfg_path.replace(path_drive, current_drive)
                 if os.path.exists(alt_path):
                     return alt_path
-        return join_paths(cfg.WORK_DIR, cfg_path)
+                alt_fixed = fixed_typo.replace(path_drive, current_drive)
+                if os.path.exists(alt_fixed):
+                    return alt_fixed
+        return join_paths(cfg.WORK_DIR, fixed_typo)
 
     # read images from directory
     if isinstance(cfg.DATASET[mode].IMAGES_PATH, str):

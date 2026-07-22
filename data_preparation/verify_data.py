@@ -22,6 +22,10 @@ def check_image_and_mask(cfg, mode):
     def resolve_path(cfg_path):
         if os.path.exists(cfg_path):
             return cfg_path
+        # Tự động sửa lỗi chính tả Datatset_ -> Dataset_
+        fixed_typo = cfg_path.replace("Datatset_", "Dataset_")
+        if os.path.exists(fixed_typo):
+            return fixed_typo
         current_drive = os.path.splitdrive(os.path.abspath(cfg.WORK_DIR))[0]
         if current_drive:
             path_drive = os.path.splitdrive(cfg_path)[0]
@@ -29,10 +33,13 @@ def check_image_and_mask(cfg, mode):
                 alt_path = cfg_path.replace(path_drive, current_drive)
                 if os.path.exists(alt_path):
                     return alt_path
+                alt_fixed = fixed_typo.replace(path_drive, current_drive)
+                if os.path.exists(alt_fixed):
+                    return alt_fixed
         rel_path = join_paths(cfg.WORK_DIR, cfg_path)
         if os.path.exists(rel_path):
             return rel_path
-        return cfg_path
+        return fixed_typo
 
     images_path = resolve_path(img_cfg)
     mask_path = resolve_path(mask_cfg)
