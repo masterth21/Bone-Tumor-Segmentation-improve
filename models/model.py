@@ -240,16 +240,85 @@ def build_nalaformer_full_transunet(cfg):
     return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="NaLaFormer_Full_TransUNet")
 
 
+def build_nalaformer_skip_transunet(cfg):
+    """NALAFORMER SKIP TRANSUNET (Chỉ nằm ở Skip Connections):
+    ResNet50V2 + CNN Bottleneck + NaLaFormer Skip-Attention Gates
+    
+    Tự động áp dụng NaLaFormer Linear Attention lên các cầu nối s1, s2, s3, s4
+    để lọc viền u, nhưng giữ Bottleneck ở dạng CNN thuần túy.
+    """
+    img_size = cfg.INPUT.HEIGHT
+    channels = cfg.INPUT.CHANNELS
+    num_classes = cfg.OUTPUT.CLASSES
+
+    # --- PHẦN 1: ENCODER (ResNet50V2) ---
+    base_model = tf.keras.applications.ResNet50V2(
+        include_top=False, weights='imagenet', input_shape=(img_size, img_size, channels)
+    )
+    
+    s1 = base_model.get_layer("conv1_conv").output       # 192x192
+    s2 = base_model.get_layer("conv2_block2_out").output # 96x96
+    s3 = base_model.get_layer("conv3_block3_out").output # 48x48
+    s4 = base_model.get_layer("conv4_block5_out").output # 24x24
+    cnn_out = base_model.output                          # 12x12 (CNN Bottleneck thuần)
+
+    # --- PHẦN 2: NALAFORMER SKIP ATTENTION GATES ---
+    s4_gate = NaLaFormerBottleneck(d_model=256, depth=1, num_heads=4, name="nala_skip_s4")(s4)
+    s3_gate = NaLaFormerBottleneck(d_model=128, depth=1, num_heads=4, name="nala_skip_s3")(s3)
+    s2_gate = NaLaFormerBottleneck(d_model=64, depth=1, num_heads=4, name="nala_skip_s2")(s2)
+    s1_gate = NaLaFormerBottleneck(d_model=32, depth=1, num_heads=4, name="nala_skip_s1")(s1)
+
+    # --- PHẦN 3: DECODER ---
+    x = cnn_out
+    # Tầng 1: 12x12 -> 24x24
+    x = tf.keras.layers.Conv2DTranspose(512, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s4_gate])
+    x = tf.keras.layers.Conv2D(512, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Tầng 2: 24x24 -> 48x48
+    x = tf.keras.layers.Conv2DTranspose(256, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s3_gate])
+    x = tf.keras.layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Tầng 3: 48x48 -> 96x96
+    x = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s2_gate])
+    x = tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Tầng 4: 96x96 -> 192x192
+    x = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s1_gate])
+    x = tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Tầng 5: 192x192 -> 384x384
+    x = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    # Đầu ra
+    outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='softmax', name='output_layer')(x)
+
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="NaLaFormer_Skip_TransUNet")
+
+
 def prepare_model(cfg: DictConfig, training=False):
     """TRẠM ĐIỀU PHỐI"""
     input_shape = [cfg.INPUT.HEIGHT, cfg.INPUT.WIDTH, cfg.INPUT.CHANNELS]
 
     if cfg.MODEL.TYPE == "nalaformer_transunet":
-        print(">>> Đang sử dụng kiến trúc: NaLaFormer TransUNet (NaLaFormer ở Bottleneck)")
+        print(">>> Đang sử dụng kiến trúc: NaLaFormer TransUNet (NaLaFormer chỉ ở Bottleneck)")
         return build_nalaformer_transunet(cfg)
 
+    elif cfg.MODEL.TYPE == "nalaformer_skip_transunet":
+        print(">>> Đang sử dụng kiến trúc: NaLaFormer Skip TransUNet (NaLaFormer chỉ ở cầu nối Skip Connections)")
+        return build_nalaformer_skip_transunet(cfg)
+
     elif cfg.MODEL.TYPE == "nalaformer_full_transunet":
-        print(">>> Đang sử dụng kiến trúc: FULL NaLaFormer TransUNet (NaLaFormer ở Bottleneck + Cầu nối Skip Connections)")
+        print(">>> Đang sử dụng kiến trúc: FULL NaLaFormer TransUNet (NaLaFormer Kép: Bottleneck + Skip Connections)")
         return build_nalaformer_full_transunet(cfg)
 
     elif cfg.MODEL.TYPE == "hybrid_transunet":
