@@ -84,7 +84,7 @@ def predict_and_visualize(cfg: DictConfig):
     checkpoint_path = join_paths(
         cfg.WORK_DIR,
         cfg.CALLBACKS.MODEL_CHECKPOINT.PATH,
-        f"{cfg.MODEL.WEIGHTS_FILE_NAME}.weights.h5"
+        f"{cfg.MODEL.WEIGHTS_FILE_NAME}.hdf5"
     )
     
     print(f"Loading weights from: {checkpoint_path}")

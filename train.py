@@ -76,7 +76,7 @@ def train(cfg: DictConfig):
 
     model.compile(
         optimizer=optimizer,
-        loss=unet3p_hybrid_loss, # <--- Dùng hàm Hybrid Loss gốc của UNet 3+ (Focal + SSIM + IoU)
+        loss=weighted_dice_loss, # <--- Weighted Batch Dice + CCE Loss (Ổn định trên GPU, không bị NaN)
         metrics=[dice_coef, dice_benign, dice_malignant],
     )
     model.summary()
@@ -87,7 +87,7 @@ def train(cfg: DictConfig):
     tb_log_dir = join_paths(cfg.WORK_DIR, cfg.CALLBACKS.TENSORBOARD.PATH, "{}".format(datetime.now().strftime("%Y.%m.%d.%H.%M.%S")))
     print("TensorBoard directory\n" + tb_log_dir)
 
-    checkpoint_path = join_paths(cfg.WORK_DIR, cfg.CALLBACKS.MODEL_CHECKPOINT.PATH, f"{cfg.MODEL.WEIGHTS_FILE_NAME}.weights.h5")
+    checkpoint_path = join_paths(cfg.WORK_DIR, cfg.CALLBACKS.MODEL_CHECKPOINT.PATH, f"{cfg.MODEL.WEIGHTS_FILE_NAME}.hdf5")
     print("Weights path\n" + checkpoint_path)
 
     csv_log_path = join_paths(cfg.WORK_DIR, cfg.CALLBACKS.CSV_LOGGER.PATH, f"training_logs_{cfg.MODEL.TYPE}.csv")
