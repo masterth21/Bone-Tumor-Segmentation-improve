@@ -76,7 +76,7 @@ def train(cfg: DictConfig):
 
     model.compile(
         optimizer=optimizer,
-        loss=weighted_dice_loss, # <--- ĐÃ ĐỔI SANG DÙNG WEIGHTED LOSS
+        loss=unet3p_hybrid_loss, # <--- Dùng hàm Hybrid Loss gốc của UNet 3+ (Focal + SSIM + IoU)
         metrics=[dice_coef, dice_benign, dice_malignant],
     )
     model.summary()

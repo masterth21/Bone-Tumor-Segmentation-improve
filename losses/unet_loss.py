@@ -18,23 +18,28 @@ def unet3p_hybrid_loss(y_true, y_pred):
 
 def weighted_dice_loss(y_true, y_pred):
     """
-    Weighted Dice Loss để trị mất cân bằng class.
-    Trọng số: [Nền: 0.1, U Lành: 0.3, U Ác: 0.8]
-    U ác thiểu số nên được đặt trọng số cao nhất.
+    Hybrid Categorical CrossEntropy + Weighted Dice Loss (Chuẩn nnU-Net).
+    - Tính Dice tổng trên toàn Batch (axis=[0, 1, 2]) giúp triệt tiêu hiện tượng nổ Loss
+      khi gặp ảnh trống hoặc nhiễu pixel nhỏ.
+    - Kết hợp Categorical CrossEntropy giúp gradient mịn màng và hội tụ cực kỳ ổn định.
     """
-    weights = tf.constant([0.1, 0.3, 0.8], dtype=tf.float32)
-    
     y_true = tf.cast(y_true, tf.float32)
-    y_pred = tf.cast(y_pred, tf.float32)
+    y_pred = tf.clip_by_value(tf.cast(y_pred, tf.float32), 1e-7, 1.0 - 1e-7)
 
-    # Tính Dice cho từng class (axis = [1, 2] tức là chiều Height, Width)
-    intersection = tf.reduce_sum(y_true * y_pred, axis=[1, 2])
-    union = tf.reduce_sum(y_true, axis=[1, 2]) + tf.reduce_sum(y_pred, axis=[1, 2])
+    # 1. Categorical CrossEntropy Loss (Trọng số phạt: BG=0.1, Lành=0.4, Ác=1.0)
+    class_weights = tf.constant([0.1, 0.4, 1.0], dtype=tf.float32)
+    ce_loss = -tf.reduce_sum(y_true * tf.math.log(y_pred), axis=-1)  # (B, H, W)
     
-    dice = (2. * intersection + 1e-7) / (union + 1e-7)
+    # Nhân trọng số class vào CE
+    weight_map = tf.reduce_sum(y_true * class_weights, axis=-1)      # (B, H, W)
+    weighted_ce = tf.reduce_mean(ce_loss * weight_map)
+
+    # 2. Weighted Dice Loss trên toàn Batch (axis=[0, 1, 2])
+    intersection = tf.reduce_sum(y_true * y_pred, axis=[0, 1, 2])
+    union = tf.reduce_sum(y_true, axis=[0, 1, 2]) + tf.reduce_sum(y_pred, axis=[0, 1, 2])
     
-    # Loss = 1 - Dice, sau đó nhân với trọng số phạt
-    loss = (1.0 - dice) * weights
-    
-    # Lấy trung bình loss của cả 3 class để backpropagate
-    return tf.reduce_mean(loss)
+    dice_per_class = (2.0 * intersection + 1e-5) / (union + 1e-5)
+    dice_loss = tf.reduce_sum((1.0 - dice_per_class) * class_weights) / tf.reduce_sum(class_weights)
+
+    # Tổng hợp 2 Loss
+    return weighted_ce + dice_loss
