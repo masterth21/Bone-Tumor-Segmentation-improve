@@ -16,11 +16,14 @@ DATA_PREPARATION:
 
 DATASET:
   TRAIN:
-    IMAGES_PATH: "D:/TumorBone/data/BTXRD/split/train/images"
-    MASK_PATH: "D:/TumorBone/data/BTXRD/split/train/mask"
+    IMAGES_PATH: "U:/Dataset_Bone_Tumor/train/images"
+    MASK_PATH: "U:/Dataset_Bone_Tumor/train/mask"
   VAL:
-    IMAGES_PATH: "D:/TumorBone/data/BTXRD/split/val/images"
-    MASK_PATH: "D:/TumorBone/data/BTXRD/split/val/mask"
+    IMAGES_PATH: "U:/Dataset_Bone_Tumor/val/images"
+    MASK_PATH: "U:/Dataset_Bone_Tumor/val/mask"
+  TEST:
+    IMAGES_PATH: "U:/Dataset_Bone_Tumor/test/images"
+    MASK_PATH: "U:/Dataset_Bone_Tumor/test/mask"
 
 
 MODEL:

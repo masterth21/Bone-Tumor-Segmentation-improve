@@ -126,24 +126,30 @@ def main():
         print("KHÔNG TÌM THẤY DỮ LIỆU! Kiểm tra lại đường dẫn.")
         return
 
-    # Shuffle và chia train/val
+    # Shuffle và chia 3 tập Train / Val / Test (tỷ lệ 8:1:1)
     random.seed(SEED)
     random.shuffle(pairs)
-    split_idx = int(len(pairs) * TRAIN_RATIO)
-    train_pairs = pairs[:split_idx]
-    val_pairs = pairs[split_idx:]
+    n_total = len(pairs)
+    n_train = int(n_total * 0.80)
+    n_val = int(n_total * 0.10)
 
-    print(f"\nChia dữ liệu:")
-    print(f"  Train: {len(train_pairs)} ảnh")
-    print(f"  Val:   {len(val_pairs)} ảnh")
+    train_pairs = pairs[:n_train]
+    val_pairs = pairs[n_train:n_train + n_val]
+    test_pairs = pairs[n_train + n_val:]
 
-    # Tạo thư mục output
-    for split in ["train", "val"]:
+    print(f"\nChia dữ liệu 3 tập theo tỷ lệ 8:1:1 (Ảnh CÓ Annotation):")
+    print(f"  1. Train (80%): {len(train_pairs)} ảnh (Huấn luyện mô hình)")
+    print(f"  2. Val   (10%): {len(val_pairs)} ảnh (Theo dõi loss & early stopping khi train)")
+    print(f"  3. Test  (10%): {len(test_pairs)} ảnh (Tập kiểm thử độc lập hoàn toàn)")
+
+    # Tạo thư mục output cho 3 tập
+    for split in ["train", "val", "test"]:
         for sub in ["images", "mask"]:
             os.makedirs(os.path.join(OUTPUT_ROOT, split, sub), exist_ok=True)
 
     # Xử lý từng split
-    for split_name, split_pairs in [("train", train_pairs), ("val", val_pairs)]:
+    splits = [("train", train_pairs), ("val", val_pairs), ("test", test_pairs)]
+    for split_name, split_pairs in splits:
         print(f"\n{'='*50}")
         print(f"  Đang xử lý: {split_name} ({len(split_pairs)} ảnh)")
         print(f"{'='*50}")
@@ -171,16 +177,14 @@ def main():
 
     # Thống kê
     print(f"\n{'='*50}")
-    print(f"  ✅ HOÀN TẤT!")
+    print(f"  ✅ HOÀN TẤT CHIA DỮ LIỆU 3 TẬP (8:1:1)!")
     print(f"{'='*50}")
     print(f"  Output: {OUTPUT_ROOT}")
-    print(f"  Train:  {len(train_pairs)} ảnh")
-    print(f"  Val:    {len(val_pairs)} ảnh")
+    print(f"  Train (80%): {len(train_pairs)} ảnh")
+    print(f"  Val   (10%): {len(val_pairs)} ảnh")
+    print(f"  Test  (10%): {len(test_pairs)} ảnh")
     print(f"  Resize: {IMG_SIZE[0]}x{IMG_SIZE[1]}")
-    print(f"  Classes: 0=background, 1=tumor")
-    print(f"\n  Cập nhật config.yaml:")
-    print(f'    IMAGES_PATH: "D:/TumorBone/data/BTXRD/split/train/images"')
-    print(f'    MASK_PATH:   "D:/TumorBone/data/BTXRD/split/train/mask"')
+    print(f"  Classes: 0=background, 1=benign, 2=malignant")
 
 
 if __name__ == "__main__":

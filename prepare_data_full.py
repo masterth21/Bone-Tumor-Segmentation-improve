@@ -121,24 +121,29 @@ def main():
     print(f"  - Số ảnh có u/annotation: {annotated_count}")
     print(f"  - Số ảnh KHÔNG u (mask đen): {unannotated_count}")
 
-    # 3. Shuffle ngẫu nhiên và chia train_full (80%) / val_full (20%)
+    # 3. Shuffle ngẫu nhiên và chia 3 tập (80% train_full / 10% val_full / 10% test_full)
     random.seed(SEED)
     random.shuffle(pairs)
-    split_idx = int(len(pairs) * TRAIN_RATIO)
-    train_pairs = pairs[:split_idx]
-    val_pairs = pairs[split_idx:]
+    n_total = len(pairs)
+    n_train = int(n_total * 0.80)
+    n_val = int(n_total * 0.10)
 
-    print(f"\nPhân chia dữ liệu toàn bộ (split_full):")
-    print(f"  - Tập train_full: {len(train_pairs)} ảnh")
-    print(f"  - Tập val_full:   {len(val_pairs)} ảnh")
+    train_pairs = pairs[:n_train]
+    val_pairs = pairs[n_train:n_train + n_val]
+    test_pairs = pairs[n_train + n_val:]
 
-    # 4. Tạo thư mục output
-    for split_folder in ["train_full", "val_full"]:
+    print(f"\nPhân chia dữ liệu toàn bộ 3 tập (split_full 8:1:1):")
+    print(f"  - Tập train_full (80%): {len(train_pairs)} ảnh")
+    print(f"  - Tập val_full   (10%): {len(val_pairs)} ảnh")
+    print(f"  - Tập test_full  (10%): {len(test_pairs)} ảnh")
+
+    # 4. Tạo thư mục output cho 3 tập full
+    for split_folder in ["train_full", "val_full", "test_full"]:
         for sub in ["images", "mask"]:
             os.makedirs(os.path.join(OUTPUT_ROOT, split_folder, sub), exist_ok=True)
 
     # 5. Xử lý và lưu ảnh/mask
-    splits = [("train_full", train_pairs), ("val_full", val_pairs)]
+    splits = [("train_full", train_pairs), ("val_full", val_pairs), ("test_full", test_pairs)]
 
     for split_name, split_pairs in splits:
         print(f"\n{'='*50}")
@@ -172,11 +177,12 @@ def main():
 
     # Thống kê kết quả
     print(f"\n{'='*50}")
-    print(f"  ✅ HOÀN TẤT TẠO DATASET FULL!")
+    print(f"  ✅ HOÀN TẤT TẠO DATASET FULL 3 TẬP (8:1:1)!")
     print(f"{'='*50}")
     print(f"  Output directory: {OUTPUT_ROOT}")
-    print(f"  - train_full/images & train_full/mask: {len(train_pairs)} mẫu")
-    print(f"  - val_full/images   & val_full/mask:   {len(val_pairs)} mẫu")
+    print(f"  - train_full (80%): {len(train_pairs)} mẫu")
+    print(f"  - val_full   (10%): {len(val_pairs)} mẫu")
+    print(f"  - test_full  (10%): {len(test_pairs)} mẫu")
     print(f"  - Kích thước ảnh: {IMG_SIZE[0]}x{IMG_SIZE[1]}")
     print(f"  - Chú thích Mask: 0=Đen (Không u / BG), 128=Xám (U lành), 255=Trắng (U ác)")
     print(f"\n  Khi muốn train với tập full này, cập nhật config.yaml:")

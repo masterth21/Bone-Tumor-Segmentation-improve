@@ -45,11 +45,12 @@ def process_test_dataset(cfg: DictConfig):
     suppress_warnings()
     cfg.HYPER_PARAMETERS.BATCH_SIZE = 1
 
-    # 1. Nạp dữ liệu tập VAL / TEST
-    val_generator = tf_data_generator.DataGenerator(cfg, mode="VAL")
+    # 1. Nạp dữ liệu tập TEST (hoặc VAL nếu không có TEST)
+    mode = "TEST" if hasattr(cfg.DATASET, "TEST") and cfg.DATASET.TEST.IMAGES_PATH else "VAL"
+    test_generator = tf_data_generator.DataGenerator(cfg, mode=mode)
     
-    # Dò tìm thư mục chứa ảnh tập VAL/TEST
-    images_dir_raw = cfg.DATASET.VAL.IMAGES_PATH
+    # Dò tìm thư mục chứa ảnh tập TEST/VAL
+    images_dir_raw = cfg.DATASET[mode].IMAGES_PATH
     images_dir = resolve_path(cfg, images_dir_raw)
     parent_dir = os.path.dirname(images_dir)
 
@@ -77,12 +78,12 @@ def process_test_dataset(cfg: DictConfig):
     model.load_weights(checkpoint_path, by_name=True, skip_mismatch=True)
 
     # 4. Lấy danh sách tên file ảnh gốc
-    image_files = [os.path.basename(p) for p in val_generator.images_paths]
+    image_files = [os.path.basename(p) for p in test_generator.images_paths]
 
-    print("\n>>> Đang tự động tạo Mask và Dãy 3 ảnh hiển thị cho toàn bộ tập Test/Val...")
+    print(f"\n>>> Đang tự động tạo Mask và Dãy 3 ảnh hiển thị cho toàn bộ tập {mode}...")
     
-    for idx in tqdm(range(len(val_generator))):
-        images, masks = val_generator[idx]
+    for idx in tqdm(range(len(test_generator))):
+        images, masks = test_generator[idx]
         img_filename = image_files[idx]
         base_name = os.path.splitext(img_filename)[0]
 
