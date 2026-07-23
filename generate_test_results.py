@@ -129,8 +129,12 @@ def process_test_dataset(cfg: DictConfig):
         axes[1].set_title("Ground Truth")
         axes[1].axis('off')
 
+        # Hiển thị tiêu đề Dice Score
+        str_b = f"{dice_benign:.4f}" if dice_benign is not None else "N/A"
+        str_m = f"{dice_malignant:.4f}" if dice_malignant is not None else "N/A"
+
         axes[2].imshow(blended_pred)
-        axes[2].set_title(f"Prediction (Dice B: {dice_benign:.4f}, M: {dice_malignant:.4f})")
+        axes[2].set_title(f"Prediction (Dice B: {str_b}, M: {str_m})")
         axes[2].axis('off')
 
         plt.tight_layout()

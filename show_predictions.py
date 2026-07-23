@@ -21,16 +21,25 @@ from models.model import prepare_model
 def compute_class_dice(y_true, y_pred, class_id):
     """
     Tính Dice score cho một class cụ thể.
+      - Nếu GT không chứa class này và Model cũng không đoán nhầm -> trả về None (hiển thị N/A).
+      - Nếu GT không chứa class này nhưng Model đoán nhầm -> 0.0000 (dương tính giả).
+      - Nếu GT có chứa class này -> (2 * Inter) / (GT_sum + Pred_sum).
     """
     true_mask = (y_true == class_id)
     pred_mask = (y_pred == class_id)
     
-    intersection = np.sum(true_mask & pred_mask)
-    volume_sum = np.sum(true_mask) + np.sum(pred_mask)
+    true_sum = np.sum(true_mask)
+    pred_sum = np.sum(pred_mask)
     
-    if volume_sum == 0:
-        return 1.0  # Không có u trong cả ground truth và dự đoán -> Dice = 1.0
-    return (2.0 * intersection) / volume_sum
+    if true_sum == 0:
+        if pred_sum == 0:
+            return None  # Ảnh gốc không có loại u này -> N/A
+        else:
+            return 0.0   # GT không có u nhưng Model đoán nhầm có u -> 0.0
+            
+    intersection = np.sum(true_mask & pred_mask)
+    return (2.0 * intersection) / (true_sum + pred_sum)
+
 
 
 def get_colored_overlay(image, pred_mask, alpha=0.4):
@@ -141,9 +150,13 @@ def predict_and_visualize(cfg: DictConfig):
         axes[1].set_title("Ground Truth")
         axes[1].axis('off')
         
+        # Hiển thị tiêu đề Dice Score
+        str_b = f"{dice_benign:.4f}" if dice_benign is not None else "N/A"
+        str_m = f"{dice_malignant:.4f}" if dice_malignant is not None else "N/A"
+
         # Subplot 3: Dự đoán overlay
         axes[2].imshow(blended_pred)
-        axes[2].set_title(f"Prediction (Dice B: {dice_benign:.4f}, M: {dice_malignant:.4f})")
+        axes[2].set_title(f"Prediction (Dice B: {str_b}, M: {str_m})")
         axes[2].axis('off')
         
         plt.tight_layout()
