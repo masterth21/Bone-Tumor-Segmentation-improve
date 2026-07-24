@@ -198,11 +198,11 @@ def build_nalaformer_full_transunet(cfg):
     )
     x = nala_bottleneck(cnn_out)
 
-    # --- PHẦN 3: NALAFORMER SKIP ATTENTION GATES (Lọc viền u trên các Skip Connections) ---
+    # --- PHẦN 3: NALAFORMER SKIP ATTENTION GATES (Áp dụng ở tầng sâu s3, s4 để tối ưu tốc độ) ---
     s4_gate = NaLaFormerBottleneck(d_model=256, depth=1, num_heads=4, name="nala_skip_s4")(s4)
     s3_gate = NaLaFormerBottleneck(d_model=128, depth=1, num_heads=4, name="nala_skip_s3")(s3)
-    s2_gate = NaLaFormerBottleneck(d_model=64, depth=1, num_heads=4, name="nala_skip_s2")(s2)
-    s1_gate = NaLaFormerBottleneck(d_model=32, depth=1, num_heads=4, name="nala_skip_s1")(s1)
+    s2_gate = s2  # Tầng nông (96x96): dùng skip connection trực tiếp để tránh nghẽn GPU
+    s1_gate = s1  # Tầng nông (192x192): dùng skip connection trực tiếp để tránh nghẽn GPU
 
     # --- PHẦN 4: DECODER ---
     # Tầng 1: 12x12 -> 24x24
@@ -242,10 +242,10 @@ def build_nalaformer_full_transunet(cfg):
 
 def build_nalaformer_skip_transunet(cfg):
     """NALAFORMER SKIP TRANSUNET (Chỉ nằm ở Skip Connections):
-    ResNet50V2 + CNN Bottleneck + NaLaFormer Skip-Attention Gates
+    ResNet50V2 + CNN Bottleneck + NaLaFormer Skip-Attention Gates (Tầng sâu s3, s4)
     
-    Tự động áp dụng NaLaFormer Linear Attention lên các cầu nối s1, s2, s3, s4
-    để lọc viền u, nhưng giữ Bottleneck ở dạng CNN thuần túy.
+    Tự động áp dụng NaLaFormer Linear Attention lên các cầu nối sâu s3, s4
+    để lọc viền u, nhưng bỏ qua s1, s2 và giữ Bottleneck ở dạng CNN thuần túy.
     """
     img_size = cfg.INPUT.HEIGHT
     channels = cfg.INPUT.CHANNELS
@@ -262,11 +262,11 @@ def build_nalaformer_skip_transunet(cfg):
     s4 = base_model.get_layer("conv4_block5_out").output # 24x24
     cnn_out = base_model.output                          # 12x12 (CNN Bottleneck thuần)
 
-    # --- PHẦN 2: NALAFORMER SKIP ATTENTION GATES ---
+    # --- PHẦN 2: NALAFORMER SKIP ATTENTION GATES (Áp dụng ở tầng sâu s3, s4 để tối ưu tốc độ) ---
     s4_gate = NaLaFormerBottleneck(d_model=256, depth=1, num_heads=4, name="nala_skip_s4")(s4)
     s3_gate = NaLaFormerBottleneck(d_model=128, depth=1, num_heads=4, name="nala_skip_s3")(s3)
-    s2_gate = NaLaFormerBottleneck(d_model=64, depth=1, num_heads=4, name="nala_skip_s2")(s2)
-    s1_gate = NaLaFormerBottleneck(d_model=32, depth=1, num_heads=4, name="nala_skip_s1")(s1)
+    s2_gate = s2  # Tầng nông (96x96): dùng skip connection trực tiếp để tránh nghẽn GPU
+    s1_gate = s1  # Tầng nông (192x192): dùng skip connection trực tiếp để tránh nghẽn GPU
 
     # --- PHẦN 3: DECODER ---
     x = cnn_out
