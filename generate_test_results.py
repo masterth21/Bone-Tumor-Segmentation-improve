@@ -187,6 +187,9 @@ def process_test_dataset(cfg: DictConfig):
         plt.close(fig)
 
     # 5. TÍNH TOÁN VÀ IN BÁO CÁO TỔNG THỂ CỦA TẬP PREDICT
+    from datetime import datetime
+    eval_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     mean_dice_b = np.mean(all_dice_benign) if len(all_dice_benign) > 0 else 0.0
     mean_dice_m = np.mean(all_dice_malignant) if len(all_dice_malignant) > 0 else 0.0
     mean_dice_ov = np.mean(all_dice_overall) if len(all_dice_overall) > 0 else 0.0
@@ -194,9 +197,10 @@ def process_test_dataset(cfg: DictConfig):
     global_dice_b = (2.0 * global_inter_benign) / global_union_benign if global_union_benign > 0 else 0.0
     global_dice_m = (2.0 * global_inter_malignant) / global_union_malignant if global_union_malignant > 0 else 0.0
 
-    summary_str = f"""
-======================================================================
-📊 KẾT QUẢ ĐÁNH GIÁ TỔNG THỂ TRÊN TẬP {mode} ({len(test_generator)} ẢNH)
+    summary_str = f"""======================================================================
+📌 MÔ HÌNH (MODEL): {cfg.MODEL.TYPE} (Backbone: {cfg.MODEL.BACKBONE.TYPE})
+📌 TẬP DỮ LIỆU (DATASET): {images_dir} | Mode: {mode} ({len(test_generator)} ảnh)
+📌 THỜI GIAN ĐÁNH GIÁ: {eval_time_str}
 ======================================================================
 1. ĐÁNH GIÁ DỰA TRÊN TRUNG BÌNH TỪNG ẢNH (Per-Image Mean Dice):
    - Mean Dice U Lành  (Benign - Class 1)   : {mean_dice_b:.4f} ({mean_dice_b*100:.2f}%)
@@ -207,6 +211,7 @@ def process_test_dataset(cfg: DictConfig):
    - Global Dice U Lành (Benign)            : {global_dice_b:.4f} ({global_dice_b*100:.2f}%)
    - Global Dice U Ác   (Malignant)         : {global_dice_m:.4f} ({global_dice_m*100:.2f}%)
 ======================================================================
+
 """
     print(summary_str)
 
@@ -217,16 +222,16 @@ def process_test_dataset(cfg: DictConfig):
         writer = csv.writer(f)
         writer.writerows(csv_rows)
 
-    # Lưu file txt tổng kết vào thư mục xuất kết quả
+    # Ghi NỐI TIẾP (append 'a') file txt tổng kết vào thư mục xuất kết quả
     summary_txt_path = os.path.join(root_dataset_dir, f"summary_evaluation_{mode.lower()}.txt")
-    with open(summary_txt_path, "w", encoding="utf-8") as f:
+    with open(summary_txt_path, "a", encoding="utf-8") as f:
         f.write(summary_str)
 
     print(f"🎉 HOÀN THÀNH!")
     print(f" MASK TEST lưu tại: {mask_test_dir}")
     print(f" SHOW PREDICT lưu tại: {show_predict_dir}")
     print(f" FILE LOG CSV CHI TIẾT TỪNG ẢNH: {csv_log_path}")
-    print(f" FILE BÁO CÁO TỔNG THỂ TXT: {summary_txt_path}")
+    print(f" FILE BÁO CÁO TỔNG THỂ TXT (GHI NỐI TIẾP): {summary_txt_path}")
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
