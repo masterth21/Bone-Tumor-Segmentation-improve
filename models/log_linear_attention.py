@@ -144,24 +144,22 @@ class LogLinearBlock(tf.keras.layers.Layer):
         self.dropout_rate = dropout_rate
 
     def build(self, input_shape):
-        self.norm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6, name="norm1")
+        self.norm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.attn = LogLinearAttention(
             d_model=self.d_model,
             num_heads=self.num_heads,
             dropout_rate=self.dropout_rate,
-            name="log_linear_attn",
         )
 
-        self.norm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6, name="norm2")
+        self.norm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         ffn_dim = self.d_model * self.ff_expansion
         self.ffn = tf.keras.Sequential(
             [
-                tf.keras.layers.Dense(ffn_dim, activation="gelu", name="ffn_dense1"),
-                tf.keras.layers.Dropout(self.dropout_rate, name="ffn_dropout1"),
-                tf.keras.layers.Dense(self.d_model, name="ffn_dense2"),
-                tf.keras.layers.Dropout(self.dropout_rate, name="ffn_dropout2"),
-            ],
-            name="ffn",
+                tf.keras.layers.Dense(ffn_dim, activation="gelu"),
+                tf.keras.layers.Dropout(self.dropout_rate),
+                tf.keras.layers.Dense(self.d_model),
+                tf.keras.layers.Dropout(self.dropout_rate),
+            ]
         )
         super().build(input_shape)
 
@@ -214,7 +212,6 @@ class LogLinearEncoder(tf.keras.layers.Layer):
                 num_heads=self.num_heads,
                 ff_expansion=self.ff_expansion,
                 dropout_rate=self.dropout_rate,
-                name=f"log_linear_block_{i}",
             )
             for i in range(self.depth)
         ]
@@ -268,10 +265,10 @@ class LogLinearBottleneck(tf.keras.layers.Layer):
         self.need_proj = (C != self.d_model)
         if self.need_proj:
             self.proj_in = tf.keras.layers.Dense(
-                self.d_model, use_bias=False, name="proj_in"
+                self.d_model, use_bias=False
             )
             self.proj_out = tf.keras.layers.Dense(
-                C, use_bias=False, name="proj_out"
+                C, use_bias=False
             )
 
         self.encoder = LogLinearEncoder(
@@ -280,7 +277,6 @@ class LogLinearBottleneck(tf.keras.layers.Layer):
             num_heads=self.num_heads,
             ff_expansion=self.ff_expansion,
             dropout_rate=self.dropout_rate,
-            name="log_linear_encoder",
         )
         super().build(input_shape)
 
