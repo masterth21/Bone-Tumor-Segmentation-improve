@@ -10,6 +10,7 @@ from .unet3plus import unet3plus
 from .unet3plus_deep_supervision import unet3plus_deepsup
 from .unet3plus_deep_supervision_cgm import unet3plus_deepsup_cgm
 from .nalaformer_attention import NaLaFormerBottleneck
+from .log_linear_attention import LogLinearBottleneck
 
 # segmentation_models chỉ dùng cho unet_plus_plus, lazy import để tránh lỗi Keras 3
 sm = None
@@ -305,24 +306,225 @@ def build_nalaformer_skip_transunet(cfg):
     return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="NaLaFormer_Skip_TransUNet")
 
 
+def build_loglinear_transunet(cfg):
+    """LOG-LINEAR TRANSUNET (arXiv:2506.04761 / ICLR 2026):
+    ResNet50V2 + Log-Linear Attention Bottleneck + Skip Connections
+    """
+    img_size = cfg.INPUT.HEIGHT
+    channels = cfg.INPUT.CHANNELS
+    num_classes = cfg.OUTPUT.CLASSES
+
+    nala_cfg = getattr(cfg.MODEL, 'NALAFORMER', None)
+    d_model = nala_cfg.D_MODEL if nala_cfg and hasattr(nala_cfg, 'D_MODEL') else 256
+    depth = nala_cfg.DEPTH if nala_cfg and hasattr(nala_cfg, 'DEPTH') else 4
+    num_heads = nala_cfg.NUM_HEADS if nala_cfg and hasattr(nala_cfg, 'NUM_HEADS') else 8
+    ff_expansion = nala_cfg.FF_EXPANSION if nala_cfg and hasattr(nala_cfg, 'FF_EXPANSION') else 4
+    dropout_rate = nala_cfg.DROPOUT_RATE if nala_cfg and hasattr(nala_cfg, 'DROPOUT_RATE') else 0.1
+
+    base_model = tf.keras.applications.ResNet50V2(
+        include_top=False, weights='imagenet', input_shape=(img_size, img_size, channels)
+    )
+
+    s1 = base_model.get_layer("conv1_conv").output
+    s2 = base_model.get_layer("conv2_block2_out").output
+    s3 = base_model.get_layer("conv3_block3_out").output
+    s4 = base_model.get_layer("conv4_block5_out").output
+    cnn_out = base_model.output
+
+    # Log-Linear Bottleneck
+    loglinear_bottleneck = LogLinearBottleneck(
+        d_model=d_model,
+        depth=depth,
+        num_heads=num_heads,
+        ff_expansion=ff_expansion,
+        dropout_rate=dropout_rate,
+        name="loglinear_bottleneck",
+    )
+    x = loglinear_bottleneck(cnn_out)
+
+    # Decoder
+    x = tf.keras.layers.Conv2DTranspose(512, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s4])
+    x = tf.keras.layers.Conv2D(512, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(256, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s3])
+    x = tf.keras.layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s2])
+    x = tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s1])
+    x = tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='softmax', name='output_layer')(x)
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="LogLinear_TransUNet")
+
+
+def build_loglinear_skip_transunet(cfg):
+    """LOG-LINEAR SKIP TRANSUNET (arXiv:2506.04761 / ICLR 2026):
+    ResNet50V2 + CNN Bottleneck + Log-Linear Skip-Attention Gates (Tầng sâu s3, s4)
+    """
+    img_size = cfg.INPUT.HEIGHT
+    channels = cfg.INPUT.CHANNELS
+    num_classes = cfg.OUTPUT.CLASSES
+
+    base_model = tf.keras.applications.ResNet50V2(
+        include_top=False, weights='imagenet', input_shape=(img_size, img_size, channels)
+    )
+
+    s1 = base_model.get_layer("conv1_conv").output
+    s2 = base_model.get_layer("conv2_block2_out").output
+    s3 = base_model.get_layer("conv3_block3_out").output
+    s4 = base_model.get_layer("conv4_block5_out").output
+    cnn_out = base_model.output
+
+    # Log-Linear Attention Gates ở s3, s4
+    s4_gate = LogLinearBottleneck(d_model=256, depth=1, num_heads=4, name="loglinear_skip_s4")(s4)
+    s3_gate = LogLinearBottleneck(d_model=128, depth=1, num_heads=4, name="loglinear_skip_s3")(s3)
+    s2_gate = s2
+    s1_gate = s1
+
+    x = cnn_out
+    x = tf.keras.layers.Conv2DTranspose(512, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s4_gate])
+    x = tf.keras.layers.Conv2D(512, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(256, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s3_gate])
+    x = tf.keras.layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s2_gate])
+    x = tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s1_gate])
+    x = tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='softmax', name='output_layer')(x)
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="LogLinear_Skip_TransUNet")
+
+
+def build_loglinear_full_transunet(cfg):
+    """FULL LOG-LINEAR TRANSUNET (arXiv:2506.04761 / ICLR 2026):
+    ResNet50V2 + Log-Linear Bottleneck + Log-Linear Skip-Attention Gates (Tầng s3, s4)
+    """
+    img_size = cfg.INPUT.HEIGHT
+    channels = cfg.INPUT.CHANNELS
+    num_classes = cfg.OUTPUT.CLASSES
+
+    nala_cfg = getattr(cfg.MODEL, 'NALAFORMER', None)
+    d_model = nala_cfg.D_MODEL if nala_cfg and hasattr(nala_cfg, 'D_MODEL') else 256
+    depth = nala_cfg.DEPTH if nala_cfg and hasattr(nala_cfg, 'DEPTH') else 4
+    num_heads = nala_cfg.NUM_HEADS if nala_cfg and hasattr(nala_cfg, 'NUM_HEADS') else 8
+    ff_expansion = nala_cfg.FF_EXPANSION if nala_cfg and hasattr(nala_cfg, 'FF_EXPANSION') else 4
+    dropout_rate = nala_cfg.DROPOUT_RATE if nala_cfg and hasattr(nala_cfg, 'DROPOUT_RATE') else 0.1
+
+    base_model = tf.keras.applications.ResNet50V2(
+        include_top=False, weights='imagenet', input_shape=(img_size, img_size, channels)
+    )
+
+    s1 = base_model.get_layer("conv1_conv").output
+    s2 = base_model.get_layer("conv2_block2_out").output
+    s3 = base_model.get_layer("conv3_block3_out").output
+    s4 = base_model.get_layer("conv4_block5_out").output
+    cnn_out = base_model.output
+
+    # Bottleneck
+    loglinear_bottleneck = LogLinearBottleneck(
+        d_model=d_model,
+        depth=depth,
+        num_heads=num_heads,
+        ff_expansion=ff_expansion,
+        dropout_rate=dropout_rate,
+        name="loglinear_bottleneck",
+    )
+    x = loglinear_bottleneck(cnn_out)
+
+    # Skip Gates
+    s4_gate = LogLinearBottleneck(d_model=256, depth=1, num_heads=4, name="loglinear_skip_s4")(s4)
+    s3_gate = LogLinearBottleneck(d_model=128, depth=1, num_heads=4, name="loglinear_skip_s3")(s3)
+    s2_gate = s2
+    s1_gate = s1
+
+    # Decoder
+    x = tf.keras.layers.Conv2DTranspose(512, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s4_gate])
+    x = tf.keras.layers.Conv2D(512, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(256, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s3_gate])
+    x = tf.keras.layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s2_gate])
+    x = tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s1_gate])
+    x = tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='softmax', name='output_layer')(x)
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="LogLinear_Full_TransUNet")
+
+
 def prepare_model(cfg: DictConfig, training=False):
     """TRẠM ĐIỀU PHỐI"""
     input_shape = [cfg.INPUT.HEIGHT, cfg.INPUT.WIDTH, cfg.INPUT.CHANNELS]
 
     if cfg.MODEL.TYPE == "nalaformer_transunet":
-        print(">>> Đang sử dụng kiến trúc: NaLaFormer TransUNet (NaLaFormer chỉ ở Bottleneck)")
+        print(">>> Dang su dung kien truc: NaLaFormer TransUNet (NaLaFormer chi o Bottleneck)")
         return build_nalaformer_transunet(cfg)
 
     elif cfg.MODEL.TYPE == "nalaformer_skip_transunet":
-        print(">>> Đang sử dụng kiến trúc: NaLaFormer Skip TransUNet (NaLaFormer chỉ ở cầu nối Skip Connections)")
+        print(">>> Dang su dung kien truc: NaLaFormer Skip TransUNet (NaLaFormer chi o cau noi Skip Connections)")
         return build_nalaformer_skip_transunet(cfg)
 
     elif cfg.MODEL.TYPE == "nalaformer_full_transunet":
-        print(">>> Đang sử dụng kiến trúc: FULL NaLaFormer TransUNet (NaLaFormer Kép: Bottleneck + Skip Connections)")
+        print(">>> Dang su dung kien truc: FULL NaLaFormer TransUNet (NaLaFormer Kep: Bottleneck + Skip Connections)")
         return build_nalaformer_full_transunet(cfg)
 
+    elif cfg.MODEL.TYPE == "loglinear_transunet":
+        print(">>> Dang su dung kien truc: Log-Linear TransUNet (ICLR 2026 / arXiv:2506.04761 - Bottleneck)")
+        return build_loglinear_transunet(cfg)
+
+    elif cfg.MODEL.TYPE == "loglinear_skip_transunet":
+        print(">>> Dang su dung kien truc: Log-Linear Skip TransUNet (ICLR 2026 / arXiv:2506.04761 - Skip Connections)")
+        return build_loglinear_skip_transunet(cfg)
+
+    elif cfg.MODEL.TYPE == "loglinear_full_transunet":
+        print(">>> Dang su dung kien truc: FULL Log-Linear TransUNet (ICLR 2026 - Kep Bottleneck + Skip Connections)")
+        return build_loglinear_full_transunet(cfg)
+
     elif cfg.MODEL.TYPE == "hybrid_transunet":
-        print(">>> Đang sử dụng kiến trúc: TRUE TransUNet (ResNet50V2 + Transformer + Skip Connections)")
+        print(">>> Dang su dung kien truc: TRUE TransUNet (ResNet50V2 + Transformer + Skip Connections)")
         return build_hybrid_transunet(cfg)
 
     elif cfg.MODEL.TYPE == "unet_plus_plus":

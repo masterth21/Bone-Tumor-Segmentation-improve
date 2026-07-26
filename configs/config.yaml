@@ -29,7 +29,11 @@ DATASET:
 MODEL:
   # Các kiến trúc khả dụng:
   #   - nalaformer_transunet (NaLaFormer ở Bottleneck - mặc định)
+  #   - nalaformer_skip_transunet (NaLaFormer ở Cầu nối Skip Connections s3, s4)
   #   - nalaformer_full_transunet (NaLaFormer ở Bottleneck + Cầu nối Skip Connections - Kép)
+  #   - loglinear_transunet (Log-Linear Attention ICLR 2026 ở Bottleneck)
+  #   - loglinear_skip_transunet (Log-Linear Attention ICLR 2026 ở Skip Connections s3, s4)
+  #   - loglinear_full_transunet (Log-Linear Attention ICLR 2026 Kép: Bottleneck + Skip Connections)
   #   - hybrid_transunet (Softmax Transformer tiêu chuẩn ở Bottleneck)
   #   - unet3plus / unet3plus_deepsup
   TYPE: "nalaformer_transunet"
