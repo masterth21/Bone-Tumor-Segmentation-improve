@@ -150,3 +150,95 @@ class ClassDice(tf.keras.metrics.Metric):
         self.intersection.assign(0.0)
         self.union.assign(0.0)
 
+
+class IoUMetric(tf.keras.metrics.Metric):
+    """
+    IoU (Intersection over Union / Jaccard Index) metric cho vùng u (Class 1 + Class 2).
+    """
+    def __init__(self, name='iou_metric', **kwargs):
+        super(IoUMetric, self).__init__(name=name, **kwargs)
+        self.intersection = self.add_weight(name='intersection', initializer='zeros')
+        self.union = self.add_weight(name='union', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_pred_idx = tf.argmax(y_pred, axis=-1)
+        y_true_idx = tf.argmax(y_true, axis=-1) if len(y_true.shape) == 4 and y_true.shape[-1] > 1 else tf.cast(y_true, tf.int64)
+
+        # Lấy vùng u (class > 0)
+        true_tumor = tf.cast(y_true_idx > 0, tf.float32)
+        pred_tumor = tf.cast(y_pred_idx > 0, tf.float32)
+
+        inter = tf.reduce_sum(true_tumor * pred_tumor)
+        uni = tf.reduce_sum(true_tumor) + tf.reduce_sum(pred_tumor) - inter
+
+        self.intersection.assign_add(inter)
+        self.union.assign_add(uni)
+
+    def result(self):
+        return (self.intersection + 1e-7) / (self.union + 1e-7)
+
+    def reset_state(self):
+        self.intersection.assign(0.0)
+        self.union.assign(0.0)
+
+
+class PrecisionMetric(tf.keras.metrics.Metric):
+    """
+    Precision metric (TP / (TP + FP)) cho vùng u.
+    """
+    def __init__(self, name='precision_metric', **kwargs):
+        super(PrecisionMetric, self).__init__(name=name, **kwargs)
+        self.tp = self.add_weight(name='tp', initializer='zeros')
+        self.fp = self.add_weight(name='fp', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_pred_idx = tf.argmax(y_pred, axis=-1)
+        y_true_idx = tf.argmax(y_true, axis=-1) if len(y_true.shape) == 4 and y_true.shape[-1] > 1 else tf.cast(y_true, tf.int64)
+
+        true_tumor = tf.cast(y_true_idx > 0, tf.float32)
+        pred_tumor = tf.cast(y_pred_idx > 0, tf.float32)
+
+        tp_val = tf.reduce_sum(true_tumor * pred_tumor)
+        fp_val = tf.reduce_sum((1.0 - true_tumor) * pred_tumor)
+
+        self.tp.assign_add(tp_val)
+        self.fp.assign_add(fp_val)
+
+    def result(self):
+        return (self.tp + 1e-7) / (self.tp + self.fp + 1e-7)
+
+    def reset_state(self):
+        self.tp.assign(0.0)
+        self.fp.assign(0.0)
+
+
+class RecallMetric(tf.keras.metrics.Metric):
+    """
+    Recall / Sensitivity metric (TP / (TP + FN)) cho vùng u.
+    """
+    def __init__(self, name='recall_metric', **kwargs):
+        super(RecallMetric, self).__init__(name=name, **kwargs)
+        self.tp = self.add_weight(name='tp', initializer='zeros')
+        self.fn = self.add_weight(name='fn', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_pred_idx = tf.argmax(y_pred, axis=-1)
+        y_true_idx = tf.argmax(y_true, axis=-1) if len(y_true.shape) == 4 and y_true.shape[-1] > 1 else tf.cast(y_true, tf.int64)
+
+        true_tumor = tf.cast(y_true_idx > 0, tf.float32)
+        pred_tumor = tf.cast(y_pred_idx > 0, tf.float32)
+
+        tp_val = tf.reduce_sum(true_tumor * pred_tumor)
+        fn_val = tf.reduce_sum(true_tumor * (1.0 - pred_tumor))
+
+        self.tp.assign_add(tp_val)
+        self.fn.assign_add(fn_val)
+
+    def result(self):
+        return (self.tp + 1e-7) / (self.tp + self.fn + 1e-7)
+
+    def reset_state(self):
+        self.tp.assign(0.0)
+        self.fn.assign(0.0)
+
+

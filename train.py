@@ -20,7 +20,7 @@ from data_generators import data_generator
 from data_preparation.verify_data import verify_data
 from utils.general_utils import create_directory, join_paths, set_gpus, suppress_warnings
 from models.model import prepare_model
-from losses.loss import DiceCoefficient, ClassDice
+from losses.loss import DiceCoefficient, ClassDice, IoUMetric, PrecisionMetric, RecallMetric
 from losses.unet_loss import unet3p_hybrid_loss, weighted_dice_loss # <-- Import hàm loss mới
 from callbacks.timing_callback import TimingCallback
 
@@ -63,6 +63,9 @@ def train(cfg: DictConfig):
             dice_coef = tf.keras.metrics.MeanMetricWrapper(name="dice_coef", fn=dice_coef)
             dice_benign = ClassDice(class_id=1, name="dice_benign")
             dice_malignant = ClassDice(class_id=2, name="dice_malignant")
+            iou_metric = IoUMetric(name="iou_metric")
+            precision_metric = PrecisionMetric(name="precision_metric")
+            recall_metric = RecallMetric(name="recall_metric")
             model = prepare_model(cfg, training=True)
     else:
         optimizer = tf.keras.optimizers.Adam(learning_rate=cfg.HYPER_PARAMETERS.LEARNING_RATE, clipnorm=1.0)
@@ -72,12 +75,15 @@ def train(cfg: DictConfig):
         dice_coef = tf.keras.metrics.MeanMetricWrapper(name="dice_coef", fn=dice_coef)
         dice_benign = ClassDice(class_id=1, name="dice_benign")
         dice_malignant = ClassDice(class_id=2, name="dice_malignant")
+        iou_metric = IoUMetric(name="iou_metric")
+        precision_metric = PrecisionMetric(name="precision_metric")
+        recall_metric = RecallMetric(name="recall_metric")
         model = prepare_model(cfg, training=True)
 
     model.compile(
         optimizer=optimizer,
-        loss=weighted_dice_loss, # <--- Weighted Batch Dice + CCE Loss (Ổn định trên GPU, không bị NaN)
-        metrics=[dice_coef, dice_benign, dice_malignant],
+        loss=weighted_dice_loss,
+        metrics=[dice_coef, dice_benign, dice_malignant, iou_metric, precision_metric, recall_metric],
     )
     model.summary()
 

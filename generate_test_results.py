@@ -85,14 +85,21 @@ def process_test_dataset(cfg: DictConfig):
     all_dice_benign = []
     all_dice_malignant = []
     all_dice_overall = []
+    all_iou_overall = []
+    all_precision_overall = []
+    all_recall_overall = []
 
     global_inter_benign = 0
     global_union_benign = 0
     global_inter_malignant = 0
     global_union_malignant = 0
 
+    global_tp_tumor = 0
+    global_fp_tumor = 0
+    global_fn_tumor = 0
+
     # Danh sách dữ liệu ghi file CSV chi tiết từng ảnh
-    csv_rows = [["Image_Name", "Dice_Benign", "Dice_Malignant", "Dice_Overall"]]
+    csv_rows = [["Image_Name", "Dice_Benign", "Dice_Malignant", "Dice_Overall", "IoU_Overall", "Precision", "Recall", "F1_Score"]]
 
     # Lấy danh sách tên file ảnh gốc
     image_files = [os.path.basename(p) for p in test_generator.images_paths]
@@ -132,23 +139,45 @@ def process_test_dataset(cfg: DictConfig):
         if dice_malignant is not None:
             all_dice_malignant.append(dice_malignant)
 
-        # Tích lũy Dice tổng thể vùng u (lành + ác) cho ảnh này
+        # Tích lũy Dice, IoU, Precision, Recall tổng thể vùng u (lành + ác) cho ảnh này
         true_tumor = (gt_mask > 0)
         pred_tumor = (pred_mask > 0)
-        inter_tumor = np.sum(true_tumor & pred_tumor)
+
+        tp = np.sum(true_tumor & pred_tumor)
+        fp = np.sum((~true_tumor) & pred_tumor)
+        fn = np.sum(true_tumor & (~pred_tumor))
+
+        inter_tumor = tp
         union_tumor = np.sum(true_tumor) + np.sum(pred_tumor)
-        
+        iou_denom = tp + fp + fn
+
         dice_ov_val = (2.0 * inter_tumor) / union_tumor if union_tumor > 0 else None
+        iou_ov_val = float(tp) / iou_denom if iou_denom > 0 else None
+        prec_val = float(tp) / (tp + fp) if (tp + fp) > 0 else None
+        rec_val = float(tp) / (tp + fn) if (tp + fn) > 0 else None
+        f1_val = (2.0 * prec_val * rec_val) / (prec_val + rec_val) if (prec_val is not None and rec_val is not None and (prec_val + rec_val) > 0) else None
+
         if dice_ov_val is not None:
             all_dice_overall.append(dice_ov_val)
+        if iou_ov_val is not None:
+            all_iou_overall.append(iou_ov_val)
+        if prec_val is not None:
+            all_precision_overall.append(prec_val)
+        if rec_val is not None:
+            all_recall_overall.append(rec_val)
 
         # Ghi dòng chi tiết từng ảnh vào CSV
         str_b_csv = f"{dice_benign:.4f}" if dice_benign is not None else "N/A"
         str_m_csv = f"{dice_malignant:.4f}" if dice_malignant is not None else "N/A"
         str_ov_csv = f"{dice_ov_val:.4f}" if dice_ov_val is not None else "N/A"
-        csv_rows.append([img_filename, str_b_csv, str_m_csv, str_ov_csv])
+        str_iou_csv = f"{iou_ov_val:.4f}" if iou_ov_val is not None else "N/A"
+        str_prec_csv = f"{prec_val:.4f}" if prec_val is not None else "N/A"
+        str_rec_csv = f"{rec_val:.4f}" if rec_val is not None else "N/A"
+        str_f1_csv = f"{f1_val:.4f}" if f1_val is not None else "N/A"
 
-        # Tích lũy cho Global Dataset Dice
+        csv_rows.append([img_filename, str_b_csv, str_m_csv, str_ov_csv, str_iou_csv, str_prec_csv, str_rec_csv, str_f1_csv])
+
+        # Tích lũy cho Global Dataset Metrics
         b_gt, b_pr = (gt_mask == 1), (pred_mask == 1)
         global_inter_benign += np.sum(b_gt & b_pr)
         global_union_benign += np.sum(b_gt) + np.sum(b_pr)
@@ -156,6 +185,10 @@ def process_test_dataset(cfg: DictConfig):
         m_gt, m_pr = (gt_mask == 2), (pred_mask == 2)
         global_inter_malignant += np.sum(m_gt & m_pr)
         global_union_malignant += np.sum(m_gt) + np.sum(m_pr)
+
+        global_tp_tumor += tp
+        global_fp_tumor += fp
+        global_fn_tumor += fn
 
         vis_gt = np.zeros_like(gt_mask, dtype=np.uint8)
         vis_gt[gt_mask == 1] = 128
@@ -193,23 +226,40 @@ def process_test_dataset(cfg: DictConfig):
     mean_dice_b = np.mean(all_dice_benign) if len(all_dice_benign) > 0 else 0.0
     mean_dice_m = np.mean(all_dice_malignant) if len(all_dice_malignant) > 0 else 0.0
     mean_dice_ov = np.mean(all_dice_overall) if len(all_dice_overall) > 0 else 0.0
+    mean_iou_ov = np.mean(all_iou_overall) if len(all_iou_overall) > 0 else 0.0
+    mean_prec_ov = np.mean(all_precision_overall) if len(all_precision_overall) > 0 else 0.0
+    mean_rec_ov = np.mean(all_recall_overall) if len(all_recall_overall) > 0 else 0.0
+    mean_f1_ov = (2.0 * mean_prec_ov * mean_rec_ov) / (mean_prec_ov + mean_rec_ov) if (mean_prec_ov + mean_rec_ov) > 0 else 0.0
 
     global_dice_b = (2.0 * global_inter_benign) / global_union_benign if global_union_benign > 0 else 0.0
     global_dice_m = (2.0 * global_inter_malignant) / global_union_malignant if global_union_malignant > 0 else 0.0
+
+    global_iou = float(global_tp_tumor) / (global_tp_tumor + global_fp_tumor + global_fn_tumor) if (global_tp_tumor + global_fp_tumor + global_fn_tumor) > 0 else 0.0
+    global_prec = float(global_tp_tumor) / (global_tp_tumor + global_fp_tumor) if (global_tp_tumor + global_fp_tumor) > 0 else 0.0
+    global_rec = float(global_tp_tumor) / (global_tp_tumor + global_fn_tumor) if (global_tp_tumor + global_fn_tumor) > 0 else 0.0
+    global_f1 = (2.0 * global_prec * global_rec) / (global_prec + global_rec) if (global_prec + global_rec) > 0 else 0.0
 
     summary_str = f"""======================================================================
 📌 MÔ HÌNH (MODEL): {cfg.MODEL.TYPE} (Backbone: {cfg.MODEL.BACKBONE.TYPE})
 📌 TẬP DỮ LIỆU (DATASET): {images_dir} | Mode: {mode} ({len(test_generator)} ảnh)
 📌 THỜI GIAN ĐÁNH GIÁ: {eval_time_str}
 ======================================================================
-1. ĐÁNH GIÁ DỰA TRÊN TRUNG BÌNH TỪNG ẢNH (Per-Image Mean Dice):
+1. ĐÁNH GIÁ DỰA TRÊN TRUNG BÌNH TỪNG ẢNH (Per-Image Mean Metrics):
    - Mean Dice U Lành  (Benign - Class 1)   : {mean_dice_b:.4f} ({mean_dice_b*100:.2f}%)
    - Mean Dice U Ác    (Malignant - Class 2): {mean_dice_m:.4f} ({mean_dice_m*100:.2f}%)
    - Mean Dice Vùng U  (Overall Tumor)      : {mean_dice_ov:.4f} ({mean_dice_ov*100:.2f}%)
+   - Mean IoU Vùng U   (Jaccard Index)      : {mean_iou_ov:.4f} ({mean_iou_ov*100:.2f}%)
+   - Mean Precision    (Độ chính xác)       : {mean_prec_ov:.4f} ({mean_prec_ov*100:.2f}%)
+   - Mean Recall       (Độ nhạy Sensitivity): {mean_rec_ov:.4f} ({mean_rec_ov*100:.2f}%)
+   - Mean F1-Score                          : {mean_f1_ov:.4f} ({mean_f1_ov*100:.2f}%)
 
-2. ĐÁNH GIÁ TỔNG TÍCH LŨY TOÀN BỘ TẬP DỮ LIỆU (Global Dataset Dice):
+2. ĐÁNH GIÁ TỔNG TÍCH LŨY TOÀN BỘ TẬP DỮ LIỆU (Global Dataset Metrics):
    - Global Dice U Lành (Benign)            : {global_dice_b:.4f} ({global_dice_b*100:.2f}%)
    - Global Dice U Ác   (Malignant)         : {global_dice_m:.4f} ({global_dice_m*100:.2f}%)
+   - Global IoU Vùng U  (Jaccard Index)      : {global_iou:.4f} ({global_iou*100:.2f}%)
+   - Global Precision   (Độ chính xác)       : {global_prec:.4f} ({global_prec*100:.2f}%)
+   - Global Recall      (Độ nhạy Sensitivity): {global_rec:.4f} ({global_rec*100:.2f}%)
+   - Global F1-Score                         : {global_f1:.4f} ({global_f1*100:.2f}%)
 ======================================================================
 
 """
