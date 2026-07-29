@@ -96,7 +96,11 @@ def train(cfg: DictConfig):
     checkpoint_path = join_paths(cfg.WORK_DIR, cfg.CALLBACKS.MODEL_CHECKPOINT.PATH, f"{cfg.MODEL.WEIGHTS_FILE_NAME}.hdf5")
     print("Weights path\n" + checkpoint_path)
 
-    csv_log_path = join_paths(cfg.WORK_DIR, cfg.CALLBACKS.CSV_LOGGER.PATH, f"training_logs_{cfg.MODEL.TYPE}.csv")
+    # Tự động nhận diện nhãn bộ dữ liệu (split vs full)
+    train_path_str = str(cfg.DATASET.TRAIN.IMAGES_PATH).lower()
+    dataset_tag = "full" if "full" in train_path_str else "split"
+
+    csv_log_path = join_paths(cfg.WORK_DIR, cfg.CALLBACKS.CSV_LOGGER.PATH, f"training_logs_{cfg.MODEL.TYPE}_{dataset_tag}.csv")
     print("Logs path\n" + csv_log_path)
 
     # Ghi phân cách và thời gian bắt đầu chạy vào file CSV log trước mỗi lượt train
