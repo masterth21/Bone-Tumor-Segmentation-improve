@@ -11,6 +11,7 @@ from .unet3plus_deep_supervision import unet3plus_deepsup
 from .unet3plus_deep_supervision_cgm import unet3plus_deepsup_cgm
 from .nalaformer_attention import NaLaFormerBottleneck
 from .log_linear_attention import LogLinearBottleneck
+from .multipole_attention import MultipoleBottleneck
 
 # segmentation_models chỉ dùng cho unet_plus_plus, lazy import để tránh lỗi Keras 3
 sm = None
@@ -495,39 +496,241 @@ def build_loglinear_full_transunet(cfg):
     return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="LogLinear_Full_TransUNet")
 
 
+def build_multipole_transunet(cfg):
+    """MULTIPOLE TRANSUNET (MANO - arXiv:2507.02748 / ICCV 2025 Workshop):
+    ResNet50V2 + Multipole Attention Bottleneck + Skip Connections
+    """
+    img_size = cfg.INPUT.HEIGHT
+    channels = cfg.INPUT.CHANNELS
+    num_classes = cfg.OUTPUT.CLASSES
+
+    nala_cfg = getattr(cfg.MODEL, 'NALAFORMER', None)
+    d_model = nala_cfg.D_MODEL if nala_cfg and hasattr(nala_cfg, 'D_MODEL') else 256
+    depth = nala_cfg.DEPTH if nala_cfg and hasattr(nala_cfg, 'DEPTH') else 4
+    num_heads = nala_cfg.NUM_HEADS if nala_cfg and hasattr(nala_cfg, 'NUM_HEADS') else 8
+    ff_expansion = nala_cfg.FF_EXPANSION if nala_cfg and hasattr(nala_cfg, 'FF_EXPANSION') else 4
+    dropout_rate = nala_cfg.DROPOUT_RATE if nala_cfg and hasattr(nala_cfg, 'DROPOUT_RATE') else 0.1
+
+    base_model = tf.keras.applications.ResNet50V2(
+        include_top=False, weights='imagenet', input_shape=(img_size, img_size, channels)
+    )
+
+    s1 = base_model.get_layer("conv1_conv").output
+    s2 = base_model.get_layer("conv2_block2_out").output
+    s3 = base_model.get_layer("conv3_block3_out").output
+    s4 = base_model.get_layer("conv4_block5_out").output
+    cnn_out = base_model.output
+
+    # Multipole Bottleneck
+    multipole_bottleneck = MultipoleBottleneck(
+        d_model=d_model,
+        depth=depth,
+        num_heads=num_heads,
+        ff_expansion=ff_expansion,
+        dropout_rate=dropout_rate,
+        name="multipole_bottleneck",
+    )
+    x = multipole_bottleneck(cnn_out)
+
+    # Decoder
+    x = tf.keras.layers.Conv2DTranspose(512, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s4])
+    x = tf.keras.layers.Conv2D(512, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(256, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s3])
+    x = tf.keras.layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s2])
+    x = tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s1])
+    x = tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='softmax', name='output_layer')(x)
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="Multipole_TransUNet")
+
+
+def build_multipole_skip_transunet(cfg):
+    """MULTIPOLE SKIP TRANSUNET (arXiv:2507.02748 / ICCV 2025 Workshop):
+    ResNet50V2 + CNN Bottleneck + Multipole Skip-Attention Gates (Tầng s3, s4)
+    """
+    img_size = cfg.INPUT.HEIGHT
+    channels = cfg.INPUT.CHANNELS
+    num_classes = cfg.OUTPUT.CLASSES
+
+    base_model = tf.keras.applications.ResNet50V2(
+        include_top=False, weights='imagenet', input_shape=(img_size, img_size, channels)
+    )
+
+    s1 = base_model.get_layer("conv1_conv").output
+    s2 = base_model.get_layer("conv2_block2_out").output
+    s3 = base_model.get_layer("conv3_block3_out").output
+    s4 = base_model.get_layer("conv4_block5_out").output
+    cnn_out = base_model.output
+
+    # Multipole Attention Gates ở s3, s4
+    s4_gate = MultipoleBottleneck(d_model=256, depth=1, num_heads=4, name="multipole_skip_s4")(s4)
+    s3_gate = MultipoleBottleneck(d_model=128, depth=1, num_heads=4, name="multipole_skip_s3")(s3)
+    s2_gate = s2
+    s1_gate = s1
+
+    x = cnn_out
+    x = tf.keras.layers.Conv2DTranspose(512, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s4_gate])
+    x = tf.keras.layers.Conv2D(512, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(256, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s3_gate])
+    x = tf.keras.layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s2_gate])
+    x = tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s1_gate])
+    x = tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='softmax', name='output_layer')(x)
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="Multipole_Skip_TransUNet")
+
+
+def build_multipole_full_transunet(cfg):
+    """FULL MULTIPOLE TRANSUNET (arXiv:2507.02748 / ICCV 2025 Workshop):
+    ResNet50V2 + Multipole Bottleneck + Multipole Skip-Attention Gates (Tầng s3, s4)
+    """
+    img_size = cfg.INPUT.HEIGHT
+    channels = cfg.INPUT.CHANNELS
+    num_classes = cfg.OUTPUT.CLASSES
+
+    nala_cfg = getattr(cfg.MODEL, 'NALAFORMER', None)
+    d_model = nala_cfg.D_MODEL if nala_cfg and hasattr(nala_cfg, 'D_MODEL') else 256
+    depth = nala_cfg.DEPTH if nala_cfg and hasattr(nala_cfg, 'DEPTH') else 4
+    num_heads = nala_cfg.NUM_HEADS if nala_cfg and hasattr(nala_cfg, 'NUM_HEADS') else 8
+    ff_expansion = nala_cfg.FF_EXPANSION if nala_cfg and hasattr(nala_cfg, 'FF_EXPANSION') else 4
+    dropout_rate = nala_cfg.DROPOUT_RATE if nala_cfg and hasattr(nala_cfg, 'DROPOUT_RATE') else 0.1
+
+    base_model = tf.keras.applications.ResNet50V2(
+        include_top=False, weights='imagenet', input_shape=(img_size, img_size, channels)
+    )
+
+    s1 = base_model.get_layer("conv1_conv").output
+    s2 = base_model.get_layer("conv2_block2_out").output
+    s3 = base_model.get_layer("conv3_block3_out").output
+    s4 = base_model.get_layer("conv4_block5_out").output
+    cnn_out = base_model.output
+
+    # Bottleneck
+    multipole_bottleneck = MultipoleBottleneck(
+        d_model=d_model,
+        depth=depth,
+        num_heads=num_heads,
+        ff_expansion=ff_expansion,
+        dropout_rate=dropout_rate,
+        name="multipole_bottleneck",
+    )
+    x = multipole_bottleneck(cnn_out)
+
+    # Skip Gates
+    s4_gate = MultipoleBottleneck(d_model=256, depth=1, num_heads=4, name="multipole_skip_s4")(s4)
+    s3_gate = MultipoleBottleneck(d_model=128, depth=1, num_heads=4, name="multipole_skip_s3")(s3)
+    s2_gate = s2
+    s1_gate = s1
+
+    # Decoder
+    x = tf.keras.layers.Conv2DTranspose(512, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s4_gate])
+    x = tf.keras.layers.Conv2D(512, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(256, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s3_gate])
+    x = tf.keras.layers.Conv2D(256, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s2_gate])
+    x = tf.keras.layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Concatenate()([x, s1_gate])
+    x = tf.keras.layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    x = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(x)
+    x = tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
+    outputs = tf.keras.layers.Conv2D(num_classes, (1, 1), activation='softmax', name='output_layer')(x)
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs, name="Multipole_Full_TransUNet")
+
+
 def prepare_model(cfg: DictConfig, training=False):
     """TRẠM ĐIỀU PHỐI"""
     input_shape = [cfg.INPUT.HEIGHT, cfg.INPUT.WIDTH, cfg.INPUT.CHANNELS]
+    model_type = str(cfg.MODEL.TYPE).strip().lower()
 
-    if cfg.MODEL.TYPE == "nalaformer_transunet":
+    if model_type == "nalaformer_transunet":
         print(">>> Dang su dung kien truc: NaLaFormer TransUNet (NaLaFormer chi o Bottleneck)")
         return build_nalaformer_transunet(cfg)
 
-    elif cfg.MODEL.TYPE == "nalaformer_skip_transunet":
+    elif model_type == "nalaformer_skip_transunet":
         print(">>> Dang su dung kien truc: NaLaFormer Skip TransUNet (NaLaFormer chi o cau noi Skip Connections)")
         return build_nalaformer_skip_transunet(cfg)
 
-    elif cfg.MODEL.TYPE == "nalaformer_full_transunet":
+    elif model_type == "nalaformer_full_transunet":
         print(">>> Dang su dung kien truc: FULL NaLaFormer TransUNet (NaLaFormer Kep: Bottleneck + Skip Connections)")
         return build_nalaformer_full_transunet(cfg)
 
-    elif cfg.MODEL.TYPE == "loglinear_transunet":
+    elif model_type == "loglinear_transunet":
         print(">>> Dang su dung kien truc: Log-Linear TransUNet (ICLR 2026 / arXiv:2506.04761 - Bottleneck)")
         return build_loglinear_transunet(cfg)
 
-    elif cfg.MODEL.TYPE == "loglinear_skip_transunet":
+    elif model_type == "loglinear_skip_transunet":
         print(">>> Dang su dung kien truc: Log-Linear Skip TransUNet (ICLR 2026 / arXiv:2506.04761 - Skip Connections)")
         return build_loglinear_skip_transunet(cfg)
 
-    elif cfg.MODEL.TYPE == "loglinear_full_transunet":
+    elif model_type == "loglinear_full_transunet":
         print(">>> Dang su dung kien truc: FULL Log-Linear TransUNet (ICLR 2026 - Kep Bottleneck + Skip Connections)")
         return build_loglinear_full_transunet(cfg)
 
-    elif cfg.MODEL.TYPE == "hybrid_transunet":
+    elif model_type == "multipole_transunet":
+        print(">>> Dang su dung kien truc: Multipole TransUNet (MANO / arXiv:2507.02748 - Bottleneck)")
+        return build_multipole_transunet(cfg)
+
+    elif model_type == "multipole_skip_transunet":
+        print(">>> Dang su dung kien truc: Multipole Skip TransUNet (MANO / arXiv:2507.02748 - Skip Connections)")
+        return build_multipole_skip_transunet(cfg)
+
+    elif model_type == "multipole_full_transunet":
+        print(">>> Dang su dung kien truc: FULL Multipole TransUNet (MANO / arXiv:2507.02748 - Kep Bottleneck + Skip Connections)")
+        return build_multipole_full_transunet(cfg)
+
+    elif model_type == "hybrid_transunet":
         print(">>> Dang su dung kien truc: TRUE TransUNet (ResNet50V2 + Transformer + Skip Connections)")
         return build_hybrid_transunet(cfg)
 
-    elif cfg.MODEL.TYPE == "unet_plus_plus":
+    elif model_type == "unet_plus_plus":
         print(f">>> Đang sử dụng kiến trúc: Unet (Standard) với Backbone {cfg.MODEL.BACKBONE.TYPE}")
         import segmentation_models as sm
         sm.set_framework('tf.keras')
@@ -553,13 +756,13 @@ def prepare_model(cfg: DictConfig, training=False):
     else:
         raise ValueError("Wrong backbone type passed for UNet 3+.")
 
-    if cfg.MODEL.TYPE == "unet3plus":
+    if model_type == "unet3plus":
         outputs, model_name = unet3plus(backbone_layers, cfg.OUTPUT.CLASSES, filters)
-    elif cfg.MODEL.TYPE == "unet3plus_deepsup":
+    elif model_type == "unet3plus_deepsup":
         outputs, model_name = unet3plus_deepsup(backbone_layers, cfg.OUTPUT.CLASSES, filters, training)
-    elif cfg.MODEL.TYPE == "unet3plus_deepsup_cgm":
+    elif model_type == "unet3plus_deepsup_cgm":
         outputs, model_name = unet3plus_deepsup_cgm(backbone_layers, cfg.OUTPUT.CLASSES, filters, training)
     else:
-        raise ValueError("Wrong model type passed.")
+        raise ValueError(f"Wrong model type passed: '{cfg.MODEL.TYPE}'. Available options: multipole_transunet, loglinear_transunet, nalaformer_transunet, unet3plus, etc.")
 
     return tf.keras.Model(inputs=input_layer, outputs=outputs, name=model_name)
