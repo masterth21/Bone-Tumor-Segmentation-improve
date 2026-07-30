@@ -162,7 +162,7 @@ class IoUMetric(tf.keras.metrics.Metric):
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         y_pred_idx = tf.argmax(y_pred, axis=-1)
-        y_true_idx = tf.argmax(y_true, axis=-1) if len(y_true.shape) == 4 and y_true.shape[-1] > 1 else tf.cast(y_true, tf.int64)
+        y_true_idx = tf.argmax(tf.cast(y_true, tf.float32), axis=-1)
 
         # Lấy vùng u (class > 0)
         true_tumor = tf.cast(y_true_idx > 0, tf.float32)
@@ -193,7 +193,7 @@ class PrecisionMetric(tf.keras.metrics.Metric):
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         y_pred_idx = tf.argmax(y_pred, axis=-1)
-        y_true_idx = tf.argmax(y_true, axis=-1) if len(y_true.shape) == 4 and y_true.shape[-1] > 1 else tf.cast(y_true, tf.int64)
+        y_true_idx = tf.argmax(tf.cast(y_true, tf.float32), axis=-1)
 
         true_tumor = tf.cast(y_true_idx > 0, tf.float32)
         pred_tumor = tf.cast(y_pred_idx > 0, tf.float32)
@@ -223,7 +223,7 @@ class RecallMetric(tf.keras.metrics.Metric):
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         y_pred_idx = tf.argmax(y_pred, axis=-1)
-        y_true_idx = tf.argmax(y_true, axis=-1) if len(y_true.shape) == 4 and y_true.shape[-1] > 1 else tf.cast(y_true, tf.int64)
+        y_true_idx = tf.argmax(tf.cast(y_true, tf.float32), axis=-1)
 
         true_tumor = tf.cast(y_true_idx > 0, tf.float32)
         pred_tumor = tf.cast(y_pred_idx > 0, tf.float32)
